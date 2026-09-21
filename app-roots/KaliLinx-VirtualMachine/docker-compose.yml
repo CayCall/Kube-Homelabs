@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  kali:
+    build: .
+    container_name: kali-vm
+    ports:
+      - "8000:443"
+      - "2222:22"
+      - "8080:80"
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
