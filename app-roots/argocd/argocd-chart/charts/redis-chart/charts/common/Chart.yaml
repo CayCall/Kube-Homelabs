@@ -1,0 +1,20 @@
+annotations:
+  licenses: Apache-2.0
+apiVersion: v2
+appVersion: 2.31.7
+description: A Library Helm Chart for grouping common logic between docker charts.
+  This chart is not deployable by itself.
+home: https://docker.com
+keywords:
+- common
+- helper
+- template
+- function
+maintainers:
+- name: Docker, Inc. All Rights Reserved.
+  url: https://github.com/docker-hardened-images/helm-charts
+name: common
+sources:
+- https://github.com/docker-hardened-images/helm-charts/tree/main/common
+type: library
+version: 2.31.7

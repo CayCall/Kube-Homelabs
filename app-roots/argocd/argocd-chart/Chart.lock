@@ -1,0 +1,9 @@
+dependencies:
+- name: redis-chart
+  repository: oci://dhi.io
+  version: 23.0.7
+- name: haproxy-chart
+  repository: oci://dhi.io
+  version: 1.30.1
+digest: sha256:14dc5959abfe4a42743f0cfe87a483889c31cc21c9be791e24cb54dc88c99a98
+generated: "2026-09-16T03:51:02.085951892Z"

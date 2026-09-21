@@ -1,0 +1,2063 @@
+{{- /*
+SPDX-License-Identifier: APACHE-2.0
+*/}}
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ printf "%s-scripts" (include "common.names.fullname" .) }}
+  namespace: {{ include "common.names.namespace" . | quote }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" .Values.commonLabels "context" $ ) | nindent 4 }}
+  {{- if .Values.commonAnnotations }}
+  annotations: {{- include "common.tplvalues.render" ( dict "value" .Values.commonAnnotations "context" $ ) | nindent 4 }}
+  {{- end }}
+data:
+{{- if and (eq .Values.architecture "replication") .Values.sentinel.enabled }}
+  start-node.sh: |
+    #!/bin/bash
+
+    . /opt/docker/scripts/start-scripts/libos.sh
+    . /opt/docker/scripts/start-scripts/liblog.sh
+    . /opt/docker/scripts/start-scripts/libvalidations.sh
+
+    get_port() {
+        hostname="$1"
+        type="$2"
+
+        port_var=$(echo "${hostname^^}_SERVICE_PORT_$type" | sed "s/-/_/g")
+        port=${!port_var}
+
+        if [ -z "$port" ]; then
+            case $type in
+                "SENTINEL")
+                    echo {{ .Values.sentinel.containerPorts.sentinel }}
+                    ;;
+                "REDIS")
+                    echo {{ .Values.master.containerPorts.redis }}
+                    ;;
+            esac
+        else
+            echo $port
+        fi
+    }
+
+    get_full_hostname() {
+        hostname="$1"
+
+        {{- if .Values.useExternalDNS.enabled }}
+        full_hostname="${hostname}.{{- include "redis.externalDNS.suffix" . }}"
+        {{- else if eq .Values.sentinel.service.type "NodePort" }}
+        full_hostname="${hostname}.{{- include "common.names.namespace" . }}"
+        {{- else }}
+        full_hostname="${hostname}.${HEADLESS_SERVICE}"
+        {{- end }}
+
+        {{- if .Values.useHostnames }}
+        echo "${full_hostname}"
+        {{- else }}
+        retry_count=0
+        until getent hosts "${full_hostname}" | awk '{ print $1; exit }' | grep .; do
+            if [[ $retry_count -lt {{ .Values.nameResolutionThreshold }} ]]; then
+                sleep {{ .Values.nameResolutionTimeout }}
+            else
+                error "IP address for ${full_hostname} not found"
+                exit 1
+            fi
+            ((retry_count++))
+        done
+        {{- end }}
+    }
+
+    REDISPORT=$(get_port "$HOSTNAME" "REDIS")
+
+    if [ -n "$REDIS_EXTERNAL_MASTER_HOST" ]; then
+        REDIS_SERVICE="$REDIS_EXTERNAL_MASTER_HOST"
+    else
+        REDIS_SERVICE="{{ template "common.names.fullname" . }}.{{ include "common.names.namespace" . }}.svc.{{ .Values.clusterDomain }}"
+    fi
+
+    SENTINEL_SERVICE_PORT=$(get_port "{{ include "common.names.fullname" . }}" "SENTINEL")
+
+    redis_cli_command() {
+        local timeout="${1:-0}"
+
+        local args=("-h" "$REDIS_SERVICE" "-p" "$SENTINEL_SERVICE_PORT")
+        local command="redis-cli"
+        if is_boolean_yes "$REDIS_TLS_ENABLED"; then
+            args+=("--tls" "--cert" "$REDIS_TLS_CERT_FILE" "--key" "$REDIS_TLS_KEY_FILE")
+            [ -n "$REDIS_TLS_CA_FILE" ] && args+=("--cacert" "$REDIS_TLS_CA_FILE")
+        fi
+        if [ "$timeout" -gt 0 ]; then
+            command="timeout $timeout $command"
+        fi
+
+        echo "{{- if and .Values.auth.enabled .Values.auth.sentinel }}REDISCLI_AUTH="\$REDIS_PASSWORD" {{ end }} $command ${args[*]}"
+    }
+
+    validate_quorum() {
+        quorum_info_command="$(redis_cli_command) sentinel master {{ .Values.sentinel.masterSet }}"
+        info "about to run the command: $quorum_info_command"
+        eval $quorum_info_command | grep -Fq "s_down"
+    }
+
+    trigger_manual_failover() {
+        failover_command="$(redis_cli_command) sentinel failover {{ .Values.sentinel.masterSet }}"
+        info "about to run the command: $failover_command"
+        eval $failover_command
+    }
+
+    get_sentinel_master_info() {
+        sentinel_info_command="$(redis_cli_command {{ .Values.sentinel.getMasterTimeout }}) sentinel get-master-addr-by-name {{ .Values.sentinel.masterSet }}"
+        info "about to run the command: $sentinel_info_command"
+        retry_while "eval $sentinel_info_command" 2 5
+    }
+
+    {{- if and .Values.sentinel.externalAccess.enabled .Values.sentinel.externalAccess.service.loadBalancerIP }}
+
+    SERVICE_NAMES="{{- $fullname := include "common.names.fullname" . -}}
+    {{- range $i, $e := .Values.sentinel.externalAccess.service.loadBalancerIP -}}
+        {{- if $i }} {{ end }}{{ printf "%s-svc-%d" $fullname $i }}
+    {{- end }}"
+    SERVICE_IPS="{{- range $i, $ip := .Values.sentinel.externalAccess.service.loadBalancerIP -}}
+    {{- if $i }} {{ end }}{{ $ip }}
+    {{- end }}"
+
+
+    # Helper function to get IP by service name
+    get_service_ip() {
+        search_name="$1"
+        set -- $SERVICE_NAMES
+        for i in $(seq 1 $#); do
+            eval name=\${$i}
+            if [ "$name" = "$search_name" ]; then
+            set -- $SERVICE_IPS
+            eval echo \${$i}
+            return 0
+            fi
+        done
+        return 1
+    }
+    
+    SVC_NAME=$(hostname | sed 's/node/svc/g')
+    CURRENT_SERVICE_IP=$(get_service_ip "$SVC_NAME")
+    echo "CURRENT_SERVICE_IP: $CURRENT_SERVICE_IP"
+    {{- else }}
+    HEADLESS_SERVICE="{{ template "common.names.fullname" . }}-headless.{{- include "common.names.namespace" . }}.svc.{{ .Values.clusterDomain }}"
+    {{- end }}
+
+    {{- if and .Values.replica.containerSecurityContext.runAsUser (eq (.Values.replica.containerSecurityContext.runAsUser | int) 0) }}
+    useradd redis
+    chown -R redis {{ .Values.replica.persistence.path }}
+    {{- end }}
+
+    [[ -f $REDIS_PASSWORD_FILE ]] && export REDIS_PASSWORD="$(< "${REDIS_PASSWORD_FILE}")"
+    [[ -f $REDIS_MASTER_PASSWORD_FILE ]] && export REDIS_MASTER_PASSWORD="$(< "${REDIS_MASTER_PASSWORD_FILE}")"
+
+    # check if there is a master
+    {{- if and .Values.sentinel.externalAccess.enabled .Values.sentinel.externalAccess.service.loadBalancerIP }}
+    master_in_persisted_conf="$(get_service_ip "$SVC_NAME")"
+    {{- else }}
+    master_in_persisted_conf="$(get_full_hostname "$HOSTNAME")"
+    {{- end }}
+    master_port_in_persisted_conf="$REDIS_MASTER_PORT_NUMBER"
+    master_in_sentinel="$(get_sentinel_master_info)"
+    redisRetVal=$?
+
+    if [[ -f /opt/docker/redis-sentinel/etc/sentinel.conf ]]; then
+        master_in_persisted_conf="$(awk '/monitor/ {print $4}' /opt/docker/redis-sentinel/etc/sentinel.conf)"
+        master_port_in_persisted_conf="$(awk '/monitor/ {print $5}' /opt/docker/redis-sentinel/etc/sentinel.conf)"
+        info "Found previous master ${master_in_persisted_conf}:${master_port_in_persisted_conf} in /opt/docker/redis-sentinel/etc/sentinel.conf"
+        debug "$(cat /opt/docker/redis-sentinel/etc/sentinel.conf | grep monitor)"
+    fi
+
+    if [[ -f /opt/docker/redis/mounted-etc/users.acl ]];then
+        cp /opt/docker/redis/mounted-etc/users.acl /opt/docker/redis/etc/users.acl
+    fi
+
+    if [[ $redisRetVal -ne 0 ]]; then
+        {{- if and .Values.sentinel.externalAccess.enabled .Values.sentinel.externalAccess.service.loadBalancerIP }}
+        if [[ "$master_in_persisted_conf" == "$(get_service_ip "$SVC_NAME")" ]]; then
+        {{- else }}
+        if [[ "$master_in_persisted_conf" == "$(get_full_hostname "$HOSTNAME")" ]]; then
+        {{- end }}
+            # Case 1: No active sentinel and in previous sentinel.conf we were the master --> MASTER
+            info "Configuring the node as master"
+            export REDIS_REPLICATION_MODE="master"
+        else
+            # Case 2: No active sentinel and in previous sentinel.conf we were not master --> REPLICA
+            info "Configuring the node as replica"
+            export REDIS_REPLICATION_MODE="replica"
+            REDIS_MASTER_HOST=${master_in_persisted_conf}
+            REDIS_MASTER_PORT_NUMBER=${master_port_in_persisted_conf}
+        fi
+    else
+        # Fetches current master's host and port
+        REDIS_SENTINEL_INFO=($(get_sentinel_master_info))
+        info "Current master: REDIS_SENTINEL_INFO=(${REDIS_SENTINEL_INFO[0]},${REDIS_SENTINEL_INFO[1]})"
+        REDIS_MASTER_HOST=${REDIS_SENTINEL_INFO[0]}
+        REDIS_MASTER_PORT_NUMBER=${REDIS_SENTINEL_INFO[1]}
+        {{- if and .Values.sentinel.externalAccess.enabled .Values.sentinel.externalAccess.service.loadBalancerIP }}
+        if [[ "$REDIS_MASTER_HOST" == "$(get_service_ip "$SVC_NAME")" ]]; then
+        {{- else }}
+        if [[ "$REDIS_MASTER_HOST" == "$(get_full_hostname "$HOSTNAME")" ]]; then
+        {{- end }}
+            # Case 3: Active sentinel and master it is this node --> MASTER
+            info "Configuring the node as master"
+            export REDIS_REPLICATION_MODE="master"
+        else
+            # Case 4: Active sentinel and master is not this node --> REPLICA
+            info "Configuring the node as replica"
+            export REDIS_REPLICATION_MODE="replica"
+
+            {{- if and .Values.sentinel.automateClusterRecovery (le (int .Values.sentinel.downAfterMilliseconds) 2000) }}
+            retry_count=1
+            while validate_quorum
+            do
+                info "sleeping, waiting for Redis master to come up"
+                sleep 1s
+                if ! ((retry_count % 11)); then
+                    info "Trying to manually failover"
+                    failover_result=$(trigger_manual_failover)
+
+                    debug "Failover result: $failover_result"
+                fi
+
+                ((retry_count+=1))
+            done
+            info "Redis master is up now"
+            {{- end }}
+        fi
+    fi
+
+    if [[ -n "$REDIS_EXTERNAL_MASTER_HOST" ]]; then
+      REDIS_MASTER_HOST="$REDIS_EXTERNAL_MASTER_HOST"
+      REDIS_MASTER_PORT_NUMBER="${REDIS_EXTERNAL_MASTER_PORT}"
+    fi
+
+    if [[ -f /opt/docker/redis/mounted-etc/replica.conf ]];then
+        cp /opt/docker/redis/mounted-etc/replica.conf /opt/docker/redis/etc/replica.conf
+    fi
+
+    if [[ -f /opt/docker/redis/mounted-etc/redis.conf ]];then
+        cp /opt/docker/redis/mounted-etc/redis.conf /opt/docker/redis/etc/redis.conf
+    fi
+
+    echo "" >> /opt/docker/redis/etc/replica.conf
+    echo "replica-announce-port $REDISPORT" >> /opt/docker/redis/etc/replica.conf
+    {{- if .Values.sentinel.externalAccess.enabled }}
+    if [[ -n "${REDIS_CLUSTER_ANNOUNCE_IP}" ]]; then
+      echo "replica-announce-ip $REDIS_CLUSTER_ANNOUNCE_IP" >> /opt/docker/redis/etc/replica.conf
+    else
+      echo "replica-announce-ip $(get_full_hostname "$HOSTNAME")" >> /opt/docker/redis/etc/replica.conf
+    fi
+    {{- else }}
+    echo "replica-announce-ip $(get_full_hostname "$HOSTNAME")" >> /opt/docker/redis/etc/replica.conf
+    {{- end }}
+    {{- if .Values.tls.enabled }}
+    ARGS=("--port" "0")
+    ARGS+=("--tls-port" "${REDIS_TLS_PORT}")
+    ARGS+=("--tls-cert-file" "${REDIS_TLS_CERT_FILE}")
+    ARGS+=("--tls-key-file" "${REDIS_TLS_KEY_FILE}")
+    {{- if not (empty (include "redis.tlsCACert" .)) }}
+    ARGS+=("--tls-ca-cert-file" "${REDIS_TLS_CA_FILE}")
+    {{- end }}
+    ARGS+=("--tls-auth-clients" "${REDIS_TLS_AUTH_CLIENTS}")
+    ARGS+=("--tls-replication" "yes")
+    {{- if .Values.tls.dhParamsFilename }}
+    ARGS+=("--tls-dh-params-file" "${REDIS_TLS_DH_PARAMS_FILE}")
+    {{- end }}
+    {{- else }}
+    ARGS=("--port" "${REDIS_PORT}")
+    {{- end }}
+
+    if [[ "$REDIS_REPLICATION_MODE" = "slave" ]] || [[ "$REDIS_REPLICATION_MODE" = "replica" ]]; then
+        ARGS+=("--replicaof" "${REDIS_MASTER_HOST}" "${REDIS_MASTER_PORT_NUMBER}")
+    fi
+
+    {{- if .Values.auth.enabled }}
+    ARGS+=("--requirepass" "${REDIS_PASSWORD}")
+    ARGS+=("--masterauth" "${REDIS_MASTER_PASSWORD}")
+    {{- else }}
+    ARGS+=("--protected-mode" "no")
+    {{- end }}
+    ARGS+=("--include" "/opt/docker/redis/etc/replica.conf")
+    ARGS+=("--include" "/opt/docker/redis/etc/redis.conf")
+    {{- if .Values.replica.extraFlags }}
+    {{- range .Values.replica.extraFlags }}
+    ARGS+=({{ . | quote }})
+    {{- end }}
+    {{- end }}
+
+    {{- if .Values.replica.preExecCmds }}
+    {{- range $command := .Values.replica.preExecCmds }}
+    {{- $command | nindent 4 }}
+    {{- end }}
+    {{- end }}
+
+    {{- if .Values.replica.command }}
+    exec {{ .Values.replica.command }} "${ARGS[@]}"
+    {{- else }}
+    exec redis-server "${ARGS[@]}"
+    {{- end }}
+
+  start-sentinel.sh: |
+    #!/bin/bash
+
+    . /opt/docker/scripts/start-scripts/libos.sh
+    . /opt/docker/scripts/start-scripts/libvalidations.sh
+    . /opt/docker/scripts/start-scripts/libfile.sh
+
+    HEADLESS_SERVICE="{{ template "common.names.fullname" . }}-headless.{{ include "common.names.namespace" . }}.svc.{{ .Values.clusterDomain }}"
+    REDIS_SERVICE="{{ template "common.names.fullname" . }}.{{ include "common.names.namespace" . }}.svc.{{ .Values.clusterDomain }}"
+
+    get_port() {
+        hostname="$1"
+        type="$2"
+
+        port_var=$(echo "${hostname^^}_SERVICE_PORT_$type" | sed "s/-/_/g")
+        port=${!port_var}
+
+        if [ -z "$port" ]; then
+            case $type in
+                "SENTINEL")
+                    echo {{ .Values.sentinel.containerPorts.sentinel }}
+                    ;;
+                "REDIS")
+                    echo {{ .Values.master.containerPorts.redis }}
+                    ;;
+            esac
+        else
+            echo $port
+        fi
+    }
+
+    get_full_hostname() {
+        hostname="$1"
+
+        {{- if .Values.useExternalDNS.enabled }}
+        full_hostname="${hostname}.{{- include "redis.externalDNS.suffix" . }}"
+        {{- else if eq .Values.sentinel.service.type "NodePort" }}
+        full_hostname="${hostname}.{{- include "common.names.namespace" . }}"
+        {{- else }}
+        full_hostname="${hostname}.${HEADLESS_SERVICE}"
+        {{- end }}
+
+        {{- if .Values.useHostnames }}
+        echo "${full_hostname}"
+        {{- else }}
+        retry_count=0
+        until getent hosts "${full_hostname}" | awk '{ print $1; exit }' | grep .; do
+            if [[ $retry_count -lt {{ .Values.nameResolutionThreshold }} ]]; then
+                sleep {{ .Values.nameResolutionTimeout }}
+            else
+                error "IP address for ${full_hostname} not found"
+                exit 1
+            fi
+            ((retry_count++))
+        done
+        {{- end }}
+    }
+
+    SERVPORT=$(get_port "$HOSTNAME" "SENTINEL")
+    REDISPORT=$(get_port "$HOSTNAME" "REDIS")
+    SENTINEL_SERVICE_PORT=$(get_port "{{ include "common.names.fullname" . }}" "SENTINEL")
+
+    sentinel_conf_set() {
+        local -r key="${1:?missing key}"
+        local value="${2:-}"
+
+        # Sanitize inputs
+        value="${value//\\/\\\\}"
+        value="${value//&/\\&}"
+        value="${value//\?/\\?}"
+        [[ "$value" = "" ]] && value="\"$value\""
+
+        replace_in_file "/opt/docker/redis-sentinel/etc/prepare-sentinel.conf" "^#*\s*${key} .*" "${key} ${value}" false
+    }
+    sentinel_conf_add() {
+        echo $'\n'"$@" >> "/opt/docker/redis-sentinel/etc/prepare-sentinel.conf"
+    }
+    host_id() {
+        echo "$1" | openssl sha1 | awk '{print $2}'
+    }
+    get_sentinel_master_info() {
+        if is_boolean_yes "$REDIS_SENTINEL_TLS_ENABLED"; then
+            sentinel_info_command="{{- if and .Values.auth.enabled .Values.auth.sentinel }}REDISCLI_AUTH="\$REDIS_PASSWORD" {{ end }}timeout {{ .Values.sentinel.getMasterTimeout }} redis-cli -h $REDIS_SERVICE -p $SENTINEL_SERVICE_PORT --tls --cert ${REDIS_SENTINEL_TLS_CERT_FILE} --key ${REDIS_SENTINEL_TLS_KEY_FILE} --cacert ${REDIS_SENTINEL_TLS_CA_FILE} sentinel get-master-addr-by-name {{ .Values.sentinel.masterSet }}"
+        else
+            sentinel_info_command="{{- if and .Values.auth.enabled .Values.auth.sentinel }}REDISCLI_AUTH="\$REDIS_PASSWORD" {{ end }}timeout {{ .Values.sentinel.getMasterTimeout }} redis-cli -h $REDIS_SERVICE -p $SENTINEL_SERVICE_PORT sentinel get-master-addr-by-name {{ .Values.sentinel.masterSet }}"
+        fi
+        info "about to run the command: $sentinel_info_command"
+        retry_while "eval $sentinel_info_command" 2 5
+    }
+
+    [[ -f $REDIS_PASSWORD_FILE ]] && export REDIS_PASSWORD="$(< "${REDIS_PASSWORD_FILE}")"
+
+    master_in_persisted_conf="$(get_full_hostname "$HOSTNAME")"
+
+    if [[ -f /opt/docker/redis-sentinel/etc/sentinel.conf ]]; then
+        master_in_persisted_conf="$(awk '/monitor/ {print $4}' /opt/docker/redis-sentinel/etc/sentinel.conf)"
+        info "Found previous master $master_in_persisted_conf in /opt/docker/redis-sentinel/etc/sentinel.conf"
+        debug "$(cat /opt/docker/redis-sentinel/etc/sentinel.conf | grep monitor)"
+    fi
+    REDIS_SENTINEL_INFO=($(get_sentinel_master_info))
+    if [ "$?" -eq "0" ]; then
+        # current master's host and port obtained from other Sentinel
+        info "printing REDIS_SENTINEL_INFO=(${REDIS_SENTINEL_INFO[0]},${REDIS_SENTINEL_INFO[1]})"
+        REDIS_MASTER_HOST=${REDIS_SENTINEL_INFO[0]}
+        REDIS_MASTER_PORT_NUMBER=${REDIS_SENTINEL_INFO[1]}
+    else
+        REDIS_MASTER_HOST="$master_in_persisted_conf"
+        REDIS_MASTER_PORT_NUMBER="$REDISPORT"
+    fi
+    if [[ "$REDIS_MASTER_HOST" == "$(get_full_hostname "$HOSTNAME")" ]]; then
+        export REDIS_REPLICATION_MODE="master"
+    else
+        export REDIS_REPLICATION_MODE="replica"
+    fi
+
+    {{- if or .Values.sentinel.masterService.enabled .Values.sentinel.service.createMaster }}
+    if [[ "${REDIS_REPLICATION_MODE}" == "master" ]]; then
+        # Add isMaster label to master node for master service
+        {{- if .Values.useHostnames }}
+        echo "${REDIS_MASTER_HOST/.*}" > /etc/shared/current
+        {{- else }}
+        echo "${REDIS_MASTER_HOST}" > /etc/shared/current
+        {{- end }}
+    fi
+    {{- end }}
+
+    if [[ -n "$REDIS_EXTERNAL_MASTER_HOST" ]]; then
+      REDIS_MASTER_HOST="$REDIS_EXTERNAL_MASTER_HOST"
+      REDIS_MASTER_PORT_NUMBER="${REDIS_EXTERNAL_MASTER_PORT}"
+    fi
+
+    # To prevent incomplete configuration and as the redis container accesses /opt/docker/redis-sentinel/etc/sentinel.conf
+    # as well, prepare the new config in `prepare-sentinel.conf` and move it atomically to the ultimate destination when it is complete.
+    cp /opt/docker/redis-sentinel/mounted-etc/sentinel.conf /opt/docker/redis-sentinel/etc/prepare-sentinel.conf
+    {{- if .Values.auth.enabled }}
+    {{- if not (contains "sentinel auth-pass" .Values.sentinel.configuration) }}
+    printf "\nsentinel auth-pass %s %s" "{{ .Values.sentinel.masterSet }}" "$REDIS_PASSWORD" >> /opt/docker/redis-sentinel/etc/prepare-sentinel.conf
+    {{- end }}
+    {{- if and .Values.auth.enabled .Values.auth.sentinel }}
+    printf "\nrequirepass %s" "$REDIS_PASSWORD" >> /opt/docker/redis-sentinel/etc/prepare-sentinel.conf
+    {{- end }}
+    {{- end }}
+    printf "\nsentinel myid %s" "$(host_id "$HOSTNAME")" >> /opt/docker/redis-sentinel/etc/prepare-sentinel.conf
+
+    if [[ -z "$REDIS_MASTER_HOST" ]] || [[ -z "$REDIS_MASTER_PORT_NUMBER" ]]
+    then
+        # Prevent incorrect configuration to be written to sentinel.conf
+        error "Redis master host is configured incorrectly (host: $REDIS_MASTER_HOST, port: $REDIS_MASTER_PORT_NUMBER)"
+        exit 1
+    fi
+
+    {{- if .Values.sentinel.externalAccess.enabled }}
+    {{- if .Values.sentinel.externalAccess.service.loadBalancerIP }}
+    sentinel_conf_set "sentinel monitor" "{{ .Values.sentinel.masterSet }} {{ index .Values.sentinel.externalAccess.service.loadBalancerIP 0 }} "$REDIS_MASTER_PORT_NUMBER" {{ .Values.sentinel.quorum }}"
+    {{- end }}
+    {{- else }}
+    sentinel_conf_set "sentinel monitor" "{{ .Values.sentinel.masterSet }} "$REDIS_MASTER_HOST" "$REDIS_MASTER_PORT_NUMBER" {{ .Values.sentinel.quorum }}"
+    {{- end }}
+
+    add_known_sentinel() {
+        hostname="$1"
+        ip="$2"
+        if [[ -n "$hostname" && -n "$ip" && "$hostname" != "$HOSTNAME" ]]; then
+            sentinel_conf_add "sentinel known-sentinel {{ .Values.sentinel.masterSet }} $(get_full_hostname "$hostname") $(get_port "$hostname" "SENTINEL") $(host_id "$hostname")"
+        fi
+    }
+
+    add_known_replica() {
+        hostname="$1"
+        ip="$2"
+        if [[ -n "$ip" && "$(get_full_hostname "$hostname")" != "$REDIS_MASTER_HOST" ]]; then
+            sentinel_conf_add "sentinel known-replica {{ .Values.sentinel.masterSet }} $(get_full_hostname "$hostname") $(get_port "$hostname" "REDIS")"
+        fi
+    }
+
+    add_known_sentinel_public_ip() {
+        hostname="$1"
+        ip="$2"
+        sentinel_conf_add "sentinel known-sentinel {{ .Values.sentinel.masterSet }} $ip $(get_port "$hostname" "SENTINEL") $(host_id "$hostname")"
+    }
+
+    add_known_replica_public_ip() {
+        hostname="$1"
+        ip="$2"
+        sentinel_conf_add "sentinel known-replica {{ .Values.sentinel.masterSet }} $ip $(get_port "$hostname" "REDIS")"
+    }
+
+    for node in $(seq 0 $(({{ .Values.replica.replicaCount }}-1))); do
+        hostname="{{ template "common.names.fullname" . }}-node-$node"
+        {{- if .Values.sentinel.externalAccess.enabled }}
+        {{- if .Values.sentinel.externalAccess.service.loadBalancerIP }}
+        ips=($(echo "$REDIS_NODES" | tr " " "\n"))
+        ip=${ips[$node]}
+        add_known_sentinel_public_ip "$hostname" "$ip"
+        add_known_replica_public_ip "$hostname" "$ip"
+        {{- end}}
+        {{- else }}
+        ip="$(getent hosts "$hostname.$HEADLESS_SERVICE" | awk '{ print $1 }')"
+        add_known_sentinel "$hostname" "$ip"
+        add_known_replica "$hostname" "$ip"
+        {{- end}}
+    done
+
+    echo "" >> /opt/docker/redis-sentinel/etc/prepare-sentinel.conf
+    {{- if not (contains "sentinel announce-hostnames" .Values.sentinel.configuration) }}
+    echo "sentinel announce-hostnames yes" >> /opt/docker/redis-sentinel/etc/prepare-sentinel.conf
+    {{- end }}
+    {{- if not (contains "sentinel resolve-hostnames" .Values.sentinel.configuration) }}
+    echo "sentinel resolve-hostnames yes" >> /opt/docker/redis-sentinel/etc/prepare-sentinel.conf
+    {{- end }}
+    {{- if not (contains "sentinel announce-port" .Values.sentinel.configuration) }}
+    echo "sentinel announce-port $SERVPORT" >> /opt/docker/redis-sentinel/etc/prepare-sentinel.conf
+    {{- end }}
+    {{- if not (contains "sentinel announce-ip" .Values.sentinel.configuration) }}
+    {{- if .Values.sentinel.externalAccess.enabled }}
+    if [[ -n "${REDIS_CLUSTER_ANNOUNCE_IP}" ]]; then
+      echo "sentinel announce-ip $REDIS_CLUSTER_ANNOUNCE_IP" >> /opt/docker/redis-sentinel/etc/prepare-sentinel.conf
+    else
+      echo "sentinel announce-ip $(get_full_hostname "$HOSTNAME")" >> /opt/docker/redis-sentinel/etc/prepare-sentinel.conf
+    fi 
+    {{- else }}
+    echo "sentinel announce-ip $(get_full_hostname "$HOSTNAME")" >> /opt/docker/redis-sentinel/etc/prepare-sentinel.conf
+    {{- end}}
+    {{- end}}
+
+    {{- if .Values.tls.enabled }}
+    ARGS=("--port" "0")
+    ARGS+=("--tls-port" "${REDIS_SENTINEL_TLS_PORT_NUMBER}")
+    ARGS+=("--tls-cert-file" "${REDIS_SENTINEL_TLS_CERT_FILE}")
+    ARGS+=("--tls-key-file" "${REDIS_SENTINEL_TLS_KEY_FILE}")
+    ARGS+=("--tls-ca-cert-file" "${REDIS_SENTINEL_TLS_CA_FILE}")
+    ARGS+=("--tls-replication" "yes")
+    ARGS+=("--tls-auth-clients" "${REDIS_SENTINEL_TLS_AUTH_CLIENTS}")
+    {{- if .Values.tls.dhParamsFilename }}
+    ARGS+=("--tls-dh-params-file" "${REDIS_SENTINEL_TLS_DH_PARAMS_FILE}")
+    {{- end }}
+    {{- end }}
+    {{- if .Values.sentinel.preExecCmds }}
+    {{- range $command := .Values.sentinel.preExecCmds }}
+    {{- $command | nindent 4 }}
+    {{- end }}
+    {{- end }}
+    mv /opt/docker/redis-sentinel/etc/prepare-sentinel.conf /opt/docker/redis-sentinel/etc/sentinel.conf
+    exec redis-server /opt/docker/redis-sentinel/etc/sentinel.conf {{- if .Values.tls.enabled }} "${ARGS[@]}" {{- end }} --sentinel
+  prestop-sentinel.sh: |
+    #!/bin/bash
+
+    . /opt/docker/scripts/start-scripts/libvalidations.sh
+    . /opt/docker/scripts/start-scripts/libos.sh
+
+    {{- if and .Values.sentinel.externalAccess.enabled .Values.sentinel.externalAccess.service.loadBalancerIP }}
+
+    SERVICE_NAMES="{{ $fullname := include "common.names.fullname" . -}}
+    {{- range $i, $e := .Values.sentinel.externalAccess.service.loadBalancerIP -}}
+        {{- if $i }} {{ end }}{{ printf "%s-svc-%d" $fullname $i }}
+    {{- end }}"
+    SERVICE_IPS="{{- range $i, $ip := .Values.sentinel.externalAccess.service.loadBalancerIP -}}
+    {{- if $i }} {{ end }}{{ $ip }}
+    {{- end }}"
+
+
+    # Helper function to get IP by service name
+    get_service_ip() {
+        search_name="$1"
+        set -- $SERVICE_NAMES
+        for i in $(seq 1 $#); do
+            eval name=\${$i}
+            if [ "$name" = "$search_name" ]; then
+            set -- $SERVICE_IPS
+            eval echo \${$i}
+            return 0
+            fi
+        done
+        return 1
+    }
+    
+    SVC_NAME=$(hostname | sed 's/node/svc/g')
+    {{- else }}
+    HEADLESS_SERVICE="{{ template "common.names.fullname" . }}-headless.{{- include "common.names.namespace" . }}.svc.{{ .Values.clusterDomain }}"
+    {{- end }}
+
+
+    get_full_hostname() {
+        hostname="$1"
+
+        {{- if .Values.useExternalDNS.enabled }}
+        full_hostname="${hostname}.{{- include "redis.externalDNS.suffix" . }}"
+        {{- else if eq .Values.sentinel.service.type "NodePort" }}
+        full_hostname="${hostname}.{{- include "common.names.namespace" . }}"
+        {{- else }}
+        full_hostname="${hostname}.${HEADLESS_SERVICE}"
+        {{- end }}
+
+        {{- if .Values.useHostnames }}
+        echo "${full_hostname}"
+        {{- else }}
+        retry_count=0
+        until getent hosts "${full_hostname}" | awk '{ print $1; exit }' | grep .; do
+            if [[ $retry_count -lt {{ .Values.nameResolutionThreshold }} ]]; then
+                sleep {{ .Values.nameResolutionTimeout }}
+            else
+                error "IP address for ${full_hostname} not found"
+                exit 1
+            fi
+            ((retry_count++))
+        done
+        {{- end }}
+    }
+
+    run_sentinel_command() {
+        if is_boolean_yes "$REDIS_SENTINEL_TLS_ENABLED"; then
+            redis-cli -p "$REDIS_SENTINEL_TLS_PORT_NUMBER" --tls --cert "$REDIS_SENTINEL_TLS_CERT_FILE" --key "$REDIS_SENTINEL_TLS_KEY_FILE" --cacert "$REDIS_SENTINEL_TLS_CA_FILE" sentinel "$@"
+        else
+            redis-cli -p "$REDIS_SENTINEL_PORT" sentinel "$@"
+        fi
+    }
+
+    sentinel_failover_finished() {
+        REDIS_SENTINEL_INFO=($(run_sentinel_command get-master-addr-by-name "{{ .Values.sentinel.masterSet }}"))
+        echo "REDIS_SENTINEL_INFO: $REDIS_SENTINEL_INFO"
+        REDIS_MASTER_HOST="${REDIS_SENTINEL_INFO[0]}"
+        echo "REDIS_MASTER_HOST: $REDIS_MASTER_HOST"
+        {{- if .Values.sentinel.externalAccess.enabled }}
+        # Get the current service name and its IP
+        CURRENT_SERVICE_NAME="$SVC_NAME"
+        echo "CURRENT_SERVICE_NAME: $CURRENT_SERVICE_NAME"
+        CURRENT_SERVICE_IP=$(get_service_ip "$CURRENT_SERVICE_NAME")
+        echo "CURRENT_SERVICE_IP: $CURRENT_SERVICE_IP"
+        # Check if both variables are not empty
+        if [[ -z "$REDIS_MASTER_HOST" ]]; then
+            echo "WARNING: REDIS_MASTER_HOST is empty, assuming failover not finished"
+            return 1
+        fi
+        
+        if [[ -z "$CURRENT_SERVICE_IP" ]]; then
+            echo "WARNING: CURRENT_SERVICE_IP is empty, assuming failover not finished"
+            return 1
+        fi
+        [[ "$REDIS_MASTER_HOST" != "$CURRENT_SERVICE_IP" ]]
+        {{- else }}
+        echo "REDIS_MASTER_HOST: $(get_full_hostname $HOSTNAME)"
+        # Check if both variables are not empty
+        if [[ -z "$REDIS_MASTER_HOST" ]]; then
+            echo "WARNING: REDIS_MASTER_HOST is empty, assuming failover not finished"
+            return 1
+        fi
+        [[ "$REDIS_MASTER_HOST" != "$(get_full_hostname $HOSTNAME)" ]]
+        {{- end }}
+    }
+
+    {{ if .Values.auth.sentinel -}}
+    # redis-cli automatically consumes credentials from the REDISCLI_AUTH variable
+    [[ -n "$REDIS_PASSWORD" ]] && export REDISCLI_AUTH="$REDIS_PASSWORD"
+    [[ -f "$REDIS_PASSWORD_FILE" ]] && export REDISCLI_AUTH="$(< "${REDIS_PASSWORD_FILE}")"
+    {{- end }}
+
+    if ! sentinel_failover_finished; then
+        echo "I am the master pod and you are stopping me. Starting sentinel failover"
+        if retry_while "sentinel_failover_finished" "{{ sub .Values.sentinel.terminationGracePeriodSeconds 10 }}" 1; then
+            echo "Master has been successfuly failed over to a different pod."
+            exit 0
+        else
+            echo "Master failover failed"
+            exit 1
+        fi
+    else
+        exit 0
+    fi
+  prestop-redis.sh: |
+    #!/bin/bash
+
+    . /opt/docker/scripts/start-scripts/libvalidations.sh
+    . /opt/docker/scripts/start-scripts/libos.sh
+
+    run_redis_command() {
+        local args=("-h" "127.0.0.1")
+        if is_boolean_yes "$REDIS_TLS_ENABLED"; then
+            args+=("-p" "$REDIS_TLS_PORT" "--tls" "--cert" "$REDIS_TLS_CERT_FILE" "--key" "$REDIS_TLS_KEY_FILE")
+            [ -n "$REDIS_TLS_CA_FILE" ] && args+=("--cacert" "$REDIS_TLS_CA_FILE")
+        else
+            args+=("-p" "$REDIS_PORT")
+        fi
+        redis-cli "${args[@]}" "$@"
+    }
+    is_master() {
+        REDIS_ROLE=$(run_redis_command role | head -1)
+        echo "REDIS_ROLE: $REDIS_ROLE"
+        [[ "$REDIS_ROLE" == "master" ]]
+    }
+
+    {{- if .Values.sentinel.externalAccess.enabled }}
+    {{- if .Values.sentinel.externalAccess.service.loadBalancerIP }}
+
+    SERVICE_NAMES="{{
+    $fullname := include "common.names.fullname" . -}}
+    {{- range $i, $e := .Values.sentinel.externalAccess.service.loadBalancerIP -}}
+        {{- if $i }} {{ end }}{{ printf "%s-svc-%d" $fullname $i }}
+    {{- end }}"
+    SERVICE_IPS="{{- range $i, $ip := .Values.sentinel.externalAccess.service.loadBalancerIP -}}
+    {{- if $i }} {{ end }}{{ $ip }}
+    {{- end }}"
+
+
+    # Helper function to get IP by service name
+    get_service_ip() {
+    search_name="$1"
+    set -- $SERVICE_NAMES
+    for i in $(seq 1 $#); do
+        eval name=\${$i}
+        if [ "$name" = "$search_name" ]; then
+        set -- $SERVICE_IPS
+        eval echo \${$i}
+        return 0
+        fi
+    done
+    return 1
+    }
+    
+    SVC_NAME=$(hostname | sed 's/node/svc/g')
+    {{- else }}
+    HEADLESS_SERVICE="{{ template "common.names.fullname" . }}-headless.{{- include "common.names.namespace" . }}.svc.{{ .Values.clusterDomain }}"
+    {{- end }}
+    {{- else }}
+    HEADLESS_SERVICE="{{ template "common.names.fullname" . }}-headless.{{- include "common.names.namespace" . }}.svc.{{ .Values.clusterDomain }}"
+    {{- end }}
+
+
+    get_full_hostname() {
+        hostname="$1"
+
+        {{- if .Values.useExternalDNS.enabled }}
+        full_hostname="${hostname}.{{- include "redis.externalDNS.suffix" . }}"
+        {{- else if eq .Values.sentinel.service.type "NodePort" }}
+        full_hostname="${hostname}.{{- include "common.names.namespace" . }}"
+        {{- else }}
+        full_hostname="${hostname}.${HEADLESS_SERVICE}"
+        {{- end }}
+
+        {{- if .Values.useHostnames }}
+        echo "${full_hostname}"
+        {{- else }}
+        retry_count=0
+        until getent hosts "${full_hostname}" | awk '{ print $1; exit }' | grep .; do
+            if [[ $retry_count -lt {{ .Values.nameResolutionThreshold }} ]]; then
+                sleep {{ .Values.nameResolutionTimeout }}
+            else
+                error "IP address for ${full_hostname} not found"
+                exit 1
+            fi
+            ((retry_count++))
+        done
+        {{- end }}
+    }
+
+    run_sentinel_command() {
+        if is_boolean_yes "$REDIS_SENTINEL_TLS_ENABLED"; then
+            {{ .Values.auth.sentinel | ternary "" "env -u REDISCLI_AUTH " -}} redis-cli -p "$REDIS_SENTINEL_TLS_PORT_NUMBER" --tls --cert "$REDIS_SENTINEL_TLS_CERT_FILE" --key "$REDIS_SENTINEL_TLS_KEY_FILE" --cacert "$REDIS_SENTINEL_TLS_CA_FILE" sentinel "$@"
+        else
+            {{ .Values.auth.sentinel | ternary "" "env -u REDISCLI_AUTH " -}} redis-cli -p "$REDIS_SENTINEL_PORT" sentinel "$@"
+        fi
+    }
+
+    sentinel_failover_finished() {
+        REDIS_SENTINEL_INFO=($(run_sentinel_command get-master-addr-by-name "{{ .Values.sentinel.masterSet }}"))
+        echo "REDIS_SENTINEL_INFO: $REDIS_SENTINEL_INFO"
+        REDIS_MASTER_HOST="${REDIS_SENTINEL_INFO[0]}"
+        echo "REDIS_MASTER_HOST: $REDIS_MASTER_HOST"
+        {{- if .Values.sentinel.externalAccess.enabled }}
+        # Get the current service name and its IP
+        CURRENT_SERVICE_NAME="$SVC_NAME"
+        echo "CURRENT_SERVICE_NAME: $CURRENT_SERVICE_NAME"
+        CURRENT_SERVICE_IP=$(get_service_ip "$CURRENT_SERVICE_NAME")
+        echo "CURRENT_SERVICE_IP: $CURRENT_SERVICE_IP"
+        # Check if both variables are not empty
+        if [[ -z "$REDIS_MASTER_HOST" ]]; then
+            echo "WARNING: REDIS_MASTER_HOST is empty, assuming failover not finished"
+            return 1
+        fi
+        
+        if [[ -z "$CURRENT_SERVICE_IP" ]]; then
+            echo "WARNING: CURRENT_SERVICE_IP is empty, assuming failover not finished"
+            return 1
+        fi
+        [[ "$REDIS_MASTER_HOST" != "$CURRENT_SERVICE_IP" ]]
+        {{- else }}
+        echo "REDIS_MASTER_HOST: $(get_full_hostname $HOSTNAME)"
+        # Check if both variables are not empty
+        if [[ -z "$REDIS_MASTER_HOST" ]]; then
+            echo "WARNING: REDIS_MASTER_HOST is empty, assuming failover not finished"
+            return 1
+        fi
+        [[ "$REDIS_MASTER_HOST" != "$(get_full_hostname $HOSTNAME)" ]]
+        {{- end }}
+    }
+
+    # redis-cli automatically consumes credentials from the REDISCLI_AUTH variable
+    [[ -n "$REDIS_PASSWORD" ]] && export REDISCLI_AUTH="$REDIS_PASSWORD"
+    [[ -f "$REDIS_PASSWORD_FILE" ]] && export REDISCLI_AUTH="$(< "${REDIS_PASSWORD_FILE}")"
+
+
+    if is_master && ! sentinel_failover_finished; then
+        echo "I am the master pod and you are stopping me. Pausing client connections."
+        # Pausing client write connections to avoid data loss
+        run_redis_command CLIENT PAUSE "{{ mul (add 2 (sub .Values.sentinel.terminationGracePeriodSeconds 10)) 1000 }}" WRITE
+
+        echo "Issuing failover"
+        # if I am the master, issue a command to failover once
+        run_sentinel_command failover "{{ .Values.sentinel.masterSet }}"
+
+        {{- if .Values.sentinel.redisShutdownWaitFailover }}
+        echo "Waiting for sentinel to complete failover for up to {{ sub .Values.sentinel.terminationGracePeriodSeconds 10 }}s"
+        retry_while "sentinel_failover_finished" "{{ sub .Values.sentinel.terminationGracePeriodSeconds 10 }}" 1
+        {{- end }}
+    else
+        exit 0
+    fi
+
+  {{- if or .Values.sentinel.masterService.enabled .Values.sentinel.service.createMaster }}
+  push-master-label.sh: |
+    #!/bin/bash
+    # https://download.redis.io/redis-stable/sentinel.conf
+
+    {{- if .Values.useHostnames }}
+    echo "${6/.*}" > /etc/shared/current
+    echo "${4/.*}" > /etc/shared/previous
+    {{- else }}
+    echo "$6" > /etc/shared/current
+    echo "$4" > /etc/shared/previous
+    {{- end }}
+  {{- end }}
+{{- else }}
+  start-master.sh: |
+    #!/bin/bash
+
+    [[ -f $REDIS_PASSWORD_FILE ]] && export REDIS_PASSWORD="$(< "${REDIS_PASSWORD_FILE}")"
+    {{- if and .Values.master.containerSecurityContext.runAsUser (eq (.Values.master.containerSecurityContext.runAsUser | int) 0) }}
+    useradd redis
+    chown -R redis {{ .Values.master.persistence.path }}
+    {{- end }}
+    if [[ -f /opt/docker/redis/mounted-etc/master.conf ]];then
+        cp /opt/docker/redis/mounted-etc/master.conf /opt/docker/redis/etc/master.conf
+    fi
+    if [[ -f /opt/docker/redis/mounted-etc/redis.conf ]];then
+        cp /opt/docker/redis/mounted-etc/redis.conf /opt/docker/redis/etc/redis.conf
+    fi
+    if [[ -f /opt/docker/redis/mounted-etc/users.acl ]];then
+        cp /opt/docker/redis/mounted-etc/users.acl /opt/docker/redis/etc/users.acl
+    fi
+    {{- if .Values.tls.enabled }}
+    ARGS=("--port" "0")
+    ARGS+=("--tls-port" "${REDIS_TLS_PORT}")
+    ARGS+=("--tls-cert-file" "${REDIS_TLS_CERT_FILE}")
+    ARGS+=("--tls-key-file" "${REDIS_TLS_KEY_FILE}")
+    {{- if not (empty (include "redis.tlsCACert" .)) }}
+    ARGS+=("--tls-ca-cert-file" "${REDIS_TLS_CA_FILE}")
+    {{- end }}
+    ARGS+=("--tls-auth-clients" "${REDIS_TLS_AUTH_CLIENTS}")
+    {{- if .Values.tls.dhParamsFilename }}
+    ARGS+=("--tls-dh-params-file" "${REDIS_TLS_DH_PARAMS_FILE}")
+    {{- end }}
+    {{- else }}
+    ARGS=("--port" "${REDIS_PORT}")
+    {{- end }}
+    {{- if .Values.auth.enabled }}
+    ARGS+=("--requirepass" "${REDIS_PASSWORD}")
+    ARGS+=("--masterauth" "${REDIS_PASSWORD}")
+    {{- else }}
+    ARGS+=("--protected-mode" "no")
+    {{- end }}
+    ARGS+=("--include" "/opt/docker/redis/etc/redis.conf")
+    ARGS+=("--include" "/opt/docker/redis/etc/master.conf")
+    {{- if .Values.master.extraFlags }}
+    {{- range .Values.master.extraFlags }}
+    ARGS+=({{ . | quote }})
+    {{- end }}
+    {{- end }}
+    {{- if .Values.master.preExecCmds }}
+    {{- range $command := .Values.master.preExecCmds }}
+    {{- $command | nindent 4 }}
+    {{- end }}
+    {{- end }}
+    {{- if .Values.master.command }}
+    exec {{ .Values.master.command }} "${ARGS[@]}"
+    {{- else }}
+    exec redis-server "${ARGS[@]}"
+    {{- end }}
+  {{- if eq .Values.architecture "replication" }}
+  start-replica.sh: |
+    #!/bin/bash
+
+    get_port() {
+        hostname="$1"
+        type="$2"
+
+        port_var=$(echo "${hostname^^}_SERVICE_PORT_$type" | sed "s/-/_/g")
+        port=${!port_var}
+
+        if [ -z "$port" ]; then
+            case $type in
+                "SENTINEL")
+                    echo {{ .Values.sentinel.containerPorts.sentinel }}
+                    ;;
+                "REDIS")
+                    echo {{ .Values.master.containerPorts.redis }}
+                    ;;
+            esac
+        else
+            echo $port
+        fi
+    }
+
+    get_full_hostname() {
+        hostname="$1"
+
+        {{- if .Values.useExternalDNS.enabled }}
+        full_hostname="${hostname}.{{- include "redis.externalDNS.suffix" . }}"
+        {{- else if eq .Values.sentinel.service.type "NodePort" }}
+        full_hostname="${hostname}.{{- include "common.names.namespace" . }}"
+        {{- else }}
+        full_hostname="${hostname}.${HEADLESS_SERVICE}"
+        {{- end }}
+
+        {{- if .Values.useHostnames }}
+        echo "${full_hostname}"
+        {{- else }}
+        retry_count=0
+        until getent hosts "${full_hostname}" | awk '{ print $1; exit }' | grep .; do
+            if [[ $retry_count -lt {{ .Values.nameResolutionThreshold }} ]]; then
+                sleep {{ .Values.nameResolutionTimeout }}
+            else
+                error "IP address for ${full_hostname} not found"
+                exit 1
+            fi
+            ((retry_count++))
+        done
+        {{- end }}
+    }
+
+    REDISPORT=$(get_port "$HOSTNAME" "REDIS")
+    HEADLESS_SERVICE="{{ template "common.names.fullname" . }}-headless.{{ include "common.names.namespace" . }}.svc.{{ .Values.clusterDomain }}"
+
+    [[ -f $REDIS_PASSWORD_FILE ]] && export REDIS_PASSWORD="$(< "${REDIS_PASSWORD_FILE}")"
+    [[ -f $REDIS_MASTER_PASSWORD_FILE ]] && export REDIS_MASTER_PASSWORD="$(< "${REDIS_MASTER_PASSWORD_FILE}")"
+    {{- if and .Values.replica.containerSecurityContext.runAsUser (eq (.Values.replica.containerSecurityContext.runAsUser | int) 0) }}
+    useradd redis
+    chown -R redis {{ .Values.replica.persistence.path }}
+    {{- end }}
+    if [[ -f /opt/docker/redis/mounted-etc/replica.conf ]];then
+        cp /opt/docker/redis/mounted-etc/replica.conf /opt/docker/redis/etc/replica.conf
+    fi
+    if [[ -f /opt/docker/redis/mounted-etc/redis.conf ]];then
+        cp /opt/docker/redis/mounted-etc/redis.conf /opt/docker/redis/etc/redis.conf
+    fi
+    if [[ -f /opt/docker/redis/mounted-etc/users.acl ]];then
+        cp /opt/docker/redis/mounted-etc/users.acl /opt/docker/redis/etc/users.acl
+    fi
+
+    echo "" >> /opt/docker/redis/etc/replica.conf
+    echo "replica-announce-port $REDISPORT" >> /opt/docker/redis/etc/replica.conf
+    echo "replica-announce-ip $(get_full_hostname "$HOSTNAME")" >> /opt/docker/redis/etc/replica.conf
+
+    {{- if .Values.tls.enabled }}
+    ARGS=("--port" "0")
+    ARGS+=("--tls-port" "${REDIS_TLS_PORT}")
+    ARGS+=("--tls-cert-file" "${REDIS_TLS_CERT_FILE}")
+    ARGS+=("--tls-key-file" "${REDIS_TLS_KEY_FILE}")
+    {{- if not (empty (include "redis.tlsCACert" .)) }}
+    ARGS+=("--tls-ca-cert-file" "${REDIS_TLS_CA_FILE}")
+    {{- end }}
+    ARGS+=("--tls-auth-clients" "${REDIS_TLS_AUTH_CLIENTS}")
+    ARGS+=("--tls-replication" "yes")
+    {{- if .Values.tls.dhParamsFilename }}
+    ARGS+=("--tls-dh-params-file" "${REDIS_TLS_DH_PARAMS_FILE}")
+    {{- end }}
+    {{- else }}
+    ARGS=("--port" "${REDIS_PORT}")
+    {{- end }}
+    ARGS+=("--replicaof" "${REDIS_MASTER_HOST}" "${REDIS_MASTER_PORT_NUMBER}")
+    {{- if .Values.auth.enabled }}
+    ARGS+=("--requirepass" "${REDIS_PASSWORD}")
+    ARGS+=("--masterauth" "${REDIS_MASTER_PASSWORD}")
+    {{- else }}
+    ARGS+=("--protected-mode" "no")
+    {{- end }}
+    ARGS+=("--include" "/opt/docker/redis/etc/redis.conf")
+    ARGS+=("--include" "/opt/docker/redis/etc/replica.conf")
+    {{- if .Values.replica.extraFlags }}
+    {{- range .Values.replica.extraFlags }}
+    ARGS+=({{ . | quote }})
+    {{- end }}
+    {{- end }}
+    {{- if .Values.replica.preExecCmds }}
+    {{- range $command := .Values.replica.preExecCmds }}
+    {{- $command | nindent 4 }}
+    {{- end }}    {{- end }}
+    {{- if .Values.replica.command }}
+    exec {{ .Values.replica.command }} "${ARGS[@]}"
+    {{- else }}
+    exec redis-server "${ARGS[@]}"
+    {{- end }}
+  {{- end }}
+{{- end }}
+  libfs.sh: |
+    #!/bin/bash
+    #
+    # Library for file system actions
+
+    # shellcheck disable=SC1091
+
+    # Load Generic Libraries
+    . /opt/docker/scripts/start-scripts/liblog.sh
+
+    # Functions
+
+    ########################
+    # Ensure a file/directory is owned (user and group) but the given user
+    # Arguments:
+    #   $1 - filepath
+    #   $2 - owner
+    # Returns:
+    #   None
+    #########################
+    owned_by() {
+        local path="${1:?path is missing}"
+        local owner="${2:?owner is missing}"
+
+        chown "$owner":"$owner" "$path"
+    }
+
+    ########################
+    # Ensure a directory exists and, optionally, is owned by the given user
+    # Arguments:
+    #   $1 - directory
+    #   $2 - owner
+    # Returns:
+    #   None
+    #########################
+    ensure_dir_exists() {
+        local dir="${1:?directory is missing}"
+        local owner="${2:-}"
+
+        mkdir -p "${dir}"
+        if [[ -n $owner ]]; then
+            owned_by "$dir" "$owner"
+        fi
+    }
+
+    ########################
+    # Checks whether a directory is empty or not
+    # arguments:
+    #   $1 - directory
+    # returns:
+    #   boolean
+    #########################
+    is_dir_empty() {
+        local dir="${1:?missing directory}"
+
+        if [[ ! -e "$dir" ]] || [[ -z "$(ls -A "$dir")" ]]; then
+            true
+        else
+            false
+        fi
+    }
+
+    ########################
+    # Checks whether a mounted directory is empty or not
+    # arguments:
+    #   $1 - directory
+    # returns:
+    #   boolean
+    #########################
+    is_mounted_dir_empty() {
+        local dir="${1:?missing directory}"
+
+        if is_dir_empty "$dir" || find "$dir" -mindepth 1 -maxdepth 1 -not -name ".snapshot" -not -name "lost+found" -exec false {} +; then
+            true
+        else
+            false
+        fi
+    }
+
+    ########################
+    # Checks whether a file can be written to or not
+    # arguments:
+    #   $1 - file
+    # returns:
+    #   boolean
+    #########################
+    is_file_writable() {
+        local file="${1:?missing file}"
+        local dir
+        dir="$(dirname "$file")"
+
+        if [[ ( -f "$file" && -w "$file" ) || ( ! -f "$file" && -d "$dir" && -w "$dir" ) ]]; then
+            true
+        else
+            false
+        fi
+    }
+
+    ########################
+    # Relativize a path
+    # arguments:
+    #   $1 - path
+    #   $2 - base
+    # returns:
+    #   None
+    #########################
+    relativize() {
+        local -r path="${1:?missing path}"
+        local -r base="${2:?missing base}"
+        pushd "$base" >/dev/null || exit
+        realpath -q --no-symlinks --relative-base="$base" "$path" | sed -e 's|^/$|.|' -e 's|^/||'
+        popd >/dev/null || exit
+    }
+
+    ########################
+    # Configure permisions and ownership recursively
+    # Globals:
+    #   None
+    # Arguments:
+    #   $1 - paths (as a string).
+    # Flags:
+    #   -f|--file-mode - mode for directories.
+    #   -d|--dir-mode - mode for files.
+    #   -u|--user - user
+    #   -g|--group - group
+    # Returns:
+    #   None
+    #########################
+    configure_permissions_ownership() {
+        local -r paths="${1:?paths is missing}"
+        local dir_mode=""
+        local file_mode=""
+        local user=""
+        local group=""
+
+        # Validate arguments
+        shift 1
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                -f|--file-mode)
+                    shift
+                    file_mode="${1:?missing mode for files}"
+                    ;;
+                -d|--dir-mode)
+                    shift
+                    dir_mode="${1:?missing mode for directories}"
+                    ;;
+                -u|--user)
+                    shift
+                    user="${1:?missing user}"
+                    ;;
+                -g|--group)
+                    shift
+                    group="${1:?missing group}"
+                    ;;
+                *)
+                    echo "Invalid command line flag $1" >&2
+                    return 1
+                    ;;
+            esac
+            shift
+        done
+
+        read -r -a filepaths <<< "$paths"
+        for p in "${filepaths[@]}"; do
+            if [[ -e "$p" ]]; then
+                if [[ -n $dir_mode ]]; then
+                    find -L "$p" -type d -exec chmod "$dir_mode" {} \;
+                fi
+                if [[ -n $file_mode ]]; then
+                    find -L "$p" -type f -exec chmod "$file_mode" {} \;
+                fi
+                if [[ -n $user ]] && [[ -n $group ]]; then
+                    chown -LR "$user":"$group" "$p"
+                elif [[ -n $user ]] && [[ -z $group ]]; then
+                    chown -LR "$user" "$p"
+                elif [[ -z $user ]] && [[ -n $group ]]; then
+                    chgrp -LR "$group" "$p"
+                fi
+            else
+                stderr_print "$p does not exist"
+            fi
+        done
+    }
+
+  libos.sh: |
+    #!/bin/bash
+    #
+    # Library for operating system actions
+
+    # shellcheck disable=SC1091
+
+    # Load Generic Libraries
+    . /opt/docker/scripts/start-scripts/liblog.sh
+    . /opt/docker/scripts/start-scripts/libfs.sh
+
+    # Functions
+
+    ########################
+    # Check if an user exists in the system
+    # Arguments:
+    #   $1 - user
+    # Returns:
+    #   Boolean
+    #########################
+    user_exists() {
+        local user="${1:?user is missing}"
+        id "$user" >/dev/null 2>&1
+    }
+
+    ########################
+    # Check if a group exists in the system
+    # Arguments:
+    #   $1 - group
+    # Returns:
+    #   Boolean
+    #########################
+    group_exists() {
+        local group="${1:?group is missing}"
+        getent group "$group" >/dev/null 2>&1
+    }
+
+    ########################
+    # Create a group in the system if it does not exist already
+    # Arguments:
+    #   $1 - group
+    # Flags:
+    #   -s|--system - Whether to create new user as system user (uid <= 999)
+    # Returns:
+    #   None
+    #########################
+    ensure_group_exists() {
+        local group="${1:?group is missing}"
+        local is_system_user=false
+
+        # Validate arguments
+        shift 1
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                -s|--system)
+                    is_system_user=true
+                    ;;
+                *)
+                    echo "Invalid command line flag $1" >&2
+                    return 1
+                    ;;
+            esac
+            shift
+        done
+
+        if ! group_exists "$group"; then
+            local -a args=("$group")
+            $is_system_user && args+=("--system")
+            groupadd "${args[@]}" >/dev/null 2>&1
+        fi
+    }
+
+    ########################
+    # Create an user in the system if it does not exist already
+    # Arguments:
+    #   $1 - user
+    # Flags:
+    #   -g|--group - the group the new user should belong to
+    #   -h|--home - the home directory for the new user
+    #   -s|--system - whether to create new user as system user (uid <= 999)
+    # Returns:
+    #   None
+    #########################
+    ensure_user_exists() {
+        local user="${1:?user is missing}"
+        local group=""
+        local home=""
+        local is_system_user=false
+
+        # Validate arguments
+        shift 1
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                -g|--group)
+                    shift
+                    group="${1:?missing group}"
+                    ;;
+                -h|--home)
+                    shift
+                    home="${1:?missing home directory}"
+                    ;;
+                -s|--system)
+                    is_system_user=true
+                    ;;
+                *)
+                    echo "Invalid command line flag $1" >&2
+                    return 1
+                    ;;
+            esac
+            shift
+        done
+
+        if ! user_exists "$user"; then
+            local -a user_args=("-N" "$user")
+            $is_system_user && user_args+=("--system")
+            useradd "${user_args[@]}" >/dev/null 2>&1
+        fi
+
+        if [[ -n "$group" ]]; then
+            local -a group_args=("$group")
+            $is_system_user && group_args+=("--system")
+            ensure_group_exists "${group_args[@]}"
+            usermod -g "$group" "$user" >/dev/null 2>&1
+        fi
+
+        if [[ -n "$home" ]]; then
+            mkdir -p "$home"
+            usermod -d "$home" "$user" >/dev/null 2>&1
+            configure_permissions_ownership "$home" -d "775" -f "664" -u "$user" -g "$group"
+        fi
+    }
+
+    ########################
+    # Check if the script is currently running as root
+    # Arguments:
+    #   $1 - user
+    #   $2 - group
+    # Returns:
+    #   Boolean
+    #########################
+    am_i_root() {
+        if [[ "$(id -u)" = "0" ]]; then
+            true
+        else
+            false
+        fi
+    }
+
+    ########################
+    # Get total memory available
+    # Arguments:
+    #   None
+    # Returns:
+    #   Memory in bytes
+    #########################
+    get_total_memory() {
+        echo $(($(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024))
+    }
+
+    ########################
+    # Get machine size depending on specified memory
+    # Globals:
+    #   None
+    # Arguments:
+    #   None
+    # Flags:
+    #   --memory - memory size (optional)
+    # Returns:
+    #   Detected instance size
+    #########################
+    get_machine_size() {
+        local memory=""
+        # Validate arguments
+        while [[ "$#" -gt 0 ]]; do
+            case "$1" in
+                --memory)
+                    shift
+                    memory="${1:?missing memory}"
+                    ;;
+                *)
+                    echo "Invalid command line flag $1" >&2
+                    return 1
+                    ;;
+            esac
+            shift
+        done
+        if [[ -z "$memory" ]]; then
+            debug "Memory was not specified, detecting available memory automatically"
+            memory="$(get_total_memory)"
+        fi
+        sanitized_memory=$(convert_to_mb "$memory")
+        if [[ "$sanitized_memory" -gt 26000 ]]; then
+            echo 2xlarge
+        elif [[ "$sanitized_memory" -gt 13000 ]]; then
+            echo xlarge
+        elif [[ "$sanitized_memory" -gt 6000 ]]; then
+            echo large
+        elif [[ "$sanitized_memory" -gt 3000 ]]; then
+            echo medium
+        elif [[ "$sanitized_memory" -gt 1500 ]]; then
+            echo small
+        else
+            echo micro
+        fi
+    }
+
+    ########################
+    # Get machine size depending on specified memory
+    # Globals:
+    #   None
+    # Arguments:
+    #   $1 - memory size (optional)
+    # Returns:
+    #   Detected instance size
+    #########################
+    get_supported_machine_sizes() {
+        echo micro small medium large xlarge 2xlarge
+    }
+
+    ########################
+    # Convert memory size from string to amount of megabytes (i.e. 2G -> 2048)
+    # Globals:
+    #   None
+    # Arguments:
+    #   $1 - memory size
+    # Returns:
+    #   Result of the conversion
+    #########################
+    convert_to_mb() {
+        local amount="${1:-}"
+        if [[ $amount =~ ^([0-9]+)(m|M|g|G) ]]; then
+            size="${BASH_REMATCH[1]}"
+            unit="${BASH_REMATCH[2]}"
+            if [[ "$unit" = "g" || "$unit" = "G" ]]; then
+              amount="$((size * 1024))"
+            else
+                amount="$size"
+            fi
+        fi
+        echo "$amount"
+    }
+
+
+    #########################
+    # Redirects output to /dev/null if debug mode is disabled
+    # Globals:
+    #   DEBUG
+    # Arguments:
+    #   $@ - Command to execute
+    # Returns:
+    #   None
+    #########################
+    debug_execute() {
+        if ${DEBUG:-false}; then
+            "$@"
+        else
+            "$@" >/dev/null 2>&1
+        fi
+    }
+
+    ########################
+    # Retries a command a given number of times
+    # Arguments:
+    #   $1 - cmd (as a string)
+    #   $2 - max retries. Default: 12
+    #   $3 - sleep between retries (in seconds). Default: 5
+    # Returns:
+    #   Boolean
+    #########################
+    retry_while() {
+        local cmd="${1:?cmd is missing}"
+        local retries="${2:-12}"
+        local sleep_time="${3:-5}"
+        local return_value=1
+
+        read -r -a command <<< "$cmd"
+        for ((i = 1 ; i <= retries ; i+=1 )); do
+            "${command[@]}" && return_value=0 && break
+            sleep "$sleep_time"
+        done
+        return $return_value
+    }
+
+    ########################
+    # Generate a random string
+    # Arguments:
+    #   -t|--type - String type (ascii, alphanumeric, numeric), defaults to ascii
+    #   -c|--count - Number of characters, defaults to 32
+    # Arguments:
+    #   None
+    # Returns:
+    #   None
+    # Returns:
+    #   String
+    #########################
+    generate_random_string() {
+        local type="ascii"
+        local count="32"
+        local filter
+        local result
+        # Validate arguments
+        while [[ "$#" -gt 0 ]]; do
+            case "$1" in
+                -t|--type)
+                    shift
+                    type="$1"
+                    ;;
+                -c|--count)
+                    shift
+                    count="$1"
+                    ;;
+                *)
+                    echo "Invalid command line flag $1" >&2
+                    return 1
+                    ;;
+            esac
+            shift
+        done
+        # Validate type
+        case "$type" in
+            ascii)
+                filter="[:print:]"
+                ;;
+            alphanumeric)
+                filter="a-zA-Z0-9"
+                ;;
+            numeric)
+                filter="0-9"
+                ;;
+            *)
+            echo "Invalid type ${type}" >&2
+            return 1
+        esac
+        # Obtain count + 10 lines from /dev/urandom to ensure that the resulting string has the expected size
+        # Note there is a very small chance of strings starting with EOL character
+        # Therefore, the higher amount of lines read, this will happen less frequently
+        result="$(head -n "$((count + 10))" /dev/urandom | tr -dc "$filter" | head -c "$count")"
+        echo "$result"
+    }
+
+    ########################
+    # Create md5 hash from a string
+    # Arguments:
+    #   $1 - string
+    # Returns:
+    #   md5 hash - string
+    #########################
+    generate_md5_hash() {
+      local -r str="${1:?missing input string}"
+      echo -n "$str" | md5sum | awk '{print $1}'
+    }
+
+  liblog.sh: |
+    #!/bin/bash
+    #
+    # Library for logging functions
+
+    # Constants
+    RESET='\033[0m'
+    RED='\033[38;5;1m'
+    GREEN='\033[38;5;2m'
+    YELLOW='\033[38;5;3m'
+    MAGENTA='\033[38;5;5m'
+    CYAN='\033[38;5;6m'
+
+    # Functions
+
+    ########################
+    # Print to STDERR
+    # Arguments:
+    #   Message to print
+    # Returns:
+    #   None
+    #########################
+    stderr_print() {
+        # 'is_boolean_yes' is defined in libvalidations.sh, but depends on this file so we cannot source it
+        local bool="${QUIET:-false}"
+        # comparison is performed without regard to the case of alphabetic characters
+        shopt -s nocasematch
+        if ! [[ "$bool" = 1 || "$bool" =~ ^(yes|true)$ ]]; then
+            printf "%b\\n" "${*}" >&2
+        fi
+    }
+
+    ########################
+    # Log message
+    # Arguments:
+    #   Message to log
+    # Returns:
+    #   None
+    #########################
+    log() {
+        stderr_print "${CYAN}${MODULE:-} ${MAGENTA}$(date "+%T.%2N ")${RESET}${*}"
+    }
+    ########################
+    # Log an 'info' message
+    # Arguments:
+    #   Message to log
+    # Returns:
+    #   None
+    #########################
+    info() {
+        log "${GREEN}INFO ${RESET} ==> ${*}"
+    }
+    ########################
+    # Log message
+    # Arguments:
+    #   Message to log
+    # Returns:
+    #   None
+    #########################
+    warn() {
+        log "${YELLOW}WARN ${RESET} ==> ${*}"
+    }
+    ########################
+    # Log an 'error' message
+    # Arguments:
+    #   Message to log
+    # Returns:
+    #   None
+    #########################
+    error() {
+        log "${RED}ERROR${RESET} ==> ${*}"
+    }
+    ########################
+    # Log a 'debug' message
+    # Globals:
+    #   DEBUG
+    # Arguments:
+    #   None
+    # Returns:
+    #   None
+    #########################
+    debug() {
+        # 'is_boolean_yes' is defined in libvalidations.sh, but depends on this file so we cannot source it
+        local bool="${DEBUG:-false}"
+        # comparison is performed without regard to the case of alphabetic characters
+        shopt -s nocasematch
+        if [[ "$bool" = 1 || "$bool" =~ ^(yes|true)$ ]]; then
+            log "${MAGENTA}DEBUG${RESET} ==> ${*}"
+        fi
+    }
+
+    ########################
+    # Indent a string
+    # Arguments:
+    #   $1 - string
+    #   $2 - number of indentation characters (default: 4)
+    #   $3 - indentation character (default: " ")
+    # Returns:
+    #   None
+    #########################
+    indent() {
+        local string="${1:-}"
+        local num="${2:?missing num}"
+        local char="${3:-" "}"
+        # Build the indentation unit string
+        local indent_unit=""
+        for ((i = 0; i < num; i++)); do
+            indent_unit="${indent_unit}${char}"
+        done
+        # shellcheck disable=SC2001
+        # Complex regex, see https://github.com/koalaman/shellcheck/wiki/SC2001#exceptions
+        echo "$string" | sed "s/^/${indent_unit}/"
+    }
+
+  libvalidations.sh: |
+    #!/bin/bash
+    #
+    # Validation functions library
+
+    # shellcheck disable=SC1091
+
+    # Load Generic Libraries
+    . /opt/docker/scripts/start-scripts/liblog.sh
+
+    # Functions
+
+    ########################
+    # Check if the provided argument is an integer
+    # Arguments:
+    #   $1 - Value to check
+    # Returns:
+    #   Boolean
+    #########################
+    is_int() {
+        local -r int="${1:?missing value}"
+        if [[ "$int" =~ ^-?[0-9]+ ]]; then
+            true
+        else
+            false
+        fi
+    }
+
+    ########################
+    # Check if the provided argument is a positive integer
+    # Arguments:
+    #   $1 - Value to check
+    # Returns:
+    #   Boolean
+    #########################
+    is_positive_int() {
+        local -r int="${1:?missing value}"
+        if is_int "$int" && (( "${int}" >= 0 )); then
+            true
+        else
+            false
+        fi
+    }
+
+    ########################
+    # Check if the provided argument is a boolean or is the string 'yes/true'
+    # Arguments:
+    #   $1 - Value to check
+    # Returns:
+    #   Boolean
+    #########################
+    is_boolean_yes() {
+        local -r bool="${1:-}"
+        # comparison is performed without regard to the case of alphabetic characters
+        shopt -s nocasematch
+        if [[ "$bool" = 1 || "$bool" =~ ^(yes|true)$ ]]; then
+            true
+        else
+            false
+        fi
+    }
+
+    ########################
+    # Check if the provided argument is a boolean yes/no value
+    # Arguments:
+    #   $1 - Value to check
+    # Returns:
+    #   Boolean
+    #########################
+    is_yes_no_value() {
+        local -r bool="${1:-}"
+        if [[ "$bool" =~ ^(yes|no)$ ]]; then
+            true
+        else
+            false
+        fi
+    }
+
+    ########################
+    # Check if the provided argument is a boolean true/false value
+    # Arguments:
+    #   $1 - Value to check
+    # Returns:
+    #   Boolean
+    #########################
+    is_true_false_value() {
+        local -r bool="${1:-}"
+        if [[ "$bool" =~ ^(true|false)$ ]]; then
+            true
+        else
+            false
+        fi
+    }
+
+    ########################
+    # Check if the provided argument is an empty string or not defined
+    # Arguments:
+    #   $1 - Value to check
+    # Returns:
+    #   Boolean
+    #########################
+    is_empty_value() {
+        local -r val="${1:-}"
+        if [[ -z "$val" ]]; then
+            true
+        else
+            false
+        fi
+    }
+
+    ########################
+    # Validate if the provided argument is a valid port
+    # Arguments:
+    #   $1 - Port to validate
+    # Returns:
+    #   Boolean and error message
+    #########################
+    validate_port() {
+        local value
+        local unprivileged=0
+
+        # Parse flags
+        while [[ "$#" -gt 0 ]]; do
+            case "$1" in
+                -unprivileged)
+                    unprivileged=1
+                    ;;
+                --)
+                    shift
+                    break
+                    ;;
+                -*)
+                    stderr_print "unrecognized flag $1"
+                    return 1
+                    ;;
+                *)
+                    break
+                    ;;
+            esac
+            shift
+        done
+
+        if [[ "$#" -gt 1 ]]; then
+            echo "too many arguments provided"
+            return 2
+        elif [[ "$#" -eq 0 ]]; then
+            stderr_print "missing port argument"
+            return 1
+        else
+            value=$1
+        fi
+
+        if [[ -z "$value" ]]; then
+            echo "the value is empty"
+            return 1
+        else
+            if ! is_int "$value"; then
+                echo "value is not an integer"
+                return 2
+            elif [[ "$value" -lt 0 ]]; then
+                echo "negative value provided"
+                return 2
+            elif [[ "$value" -gt 65535 ]]; then
+                echo "requested port is greater than 65535"
+                return 2
+            elif [[ "$unprivileged" = 1 && "$value" -lt 1024 ]]; then
+                echo "privileged port requested"
+                return 3
+            fi
+        fi
+    }
+
+    ########################
+    # Validate if the provided argument is a valid IPv4 address
+    # Arguments:
+    #   $1 - IP to validate
+    # Returns:
+    #   Boolean
+    #########################
+    validate_ipv4() {
+        local ip="${1:?ip is missing}"
+        local stat=1
+
+        if [[ $ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+            read -r -a ip_array <<< "$(tr '.' ' ' <<< "$ip")"
+            [[ ${ip_array[0]} -le 255 && ${ip_array[1]} -le 255 \
+                && ${ip_array[2]} -le 255 && ${ip_array[3]} -le 255 ]]
+            stat=$?
+        fi
+        return $stat
+    }
+
+    ########################
+    # Validate a string format
+    # Arguments:
+    #   $1 - String to validate
+    # Returns:
+    #   Boolean
+    #########################
+    validate_string() {
+        local string
+        local min_length=-1
+        local max_length=-1
+
+        # Parse flags
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                -min-length)
+                    shift
+                    min_length=${1:-}
+                    ;;
+                -max-length)
+                    shift
+                    max_length=${1:-}
+                    ;;
+                --)
+                    shift
+                    break
+                    ;;
+                -*)
+                    stderr_print "unrecognized flag $1"
+                    return 1
+                    ;;
+                *)
+                    break
+                    ;;
+            esac
+            shift
+        done
+
+        if [ "$#" -gt 1 ]; then
+            stderr_print "too many arguments provided"
+            return 2
+        elif [ "$#" -eq 0 ]; then
+            stderr_print "missing string"
+            return 1
+        else
+            string=$1
+        fi
+
+        if [[ "$min_length" -ge 0 ]] && [[ "${#string}" -lt "$min_length" ]]; then
+            echo "string length is less than $min_length"
+            return 1
+        fi
+        if [[ "$max_length" -ge 0 ]] && [[ "${#string}" -gt "$max_length" ]]; then
+            echo "string length is great than $max_length"
+            return 1
+        fi
+    }
+  libfile.sh: |
+    #!/bin/bash
+    #
+    # Library for managing files
+
+    # Functions
+
+    ########################
+    # Replace a regex in a file
+    # Arguments:
+    #   $1 - filename
+    #   $2 - match regex
+    #   $3 - substitute regex
+    #   $4 - use POSIX regex. Default: true
+    # Returns:
+    #   None
+    #########################
+    replace_in_file() {
+        local filename="${1:?filename is required}"
+        local match_regex="${2:?match regex is required}"
+        local substitute_regex="${3:?substitute regex is required}"
+        local posix_regex=${4:-true}
+
+        local result
+
+        # We should avoid using 'sed in-place' substitutions
+        # 1) They are not compatible with files mounted from ConfigMap(s)
+        # 2) We found incompatibility issues with Debian10 and "in-place" substitutions
+        del=$'\001' # Use a non-printable character as a 'sed' delimiter to avoid issues
+        if [[ $posix_regex = true ]]; then
+            result="$(sed -E "s${del}${match_regex}${del}${substitute_regex}${del}g" "$filename")"
+        else
+            result="$(sed "s${del}${match_regex}${del}${substitute_regex}${del}g" "$filename")"
+        fi
+        echo "$result" > "$filename"
+    }
+
+    ########################
+    # Remove a line in a file based on a regex
+    # Arguments:
+    #   $1 - filename
+    #   $2 - match regex
+    #   $3 - use POSIX regex. Default: true
+    # Returns:
+    #   None
+    #########################
+    remove_in_file() {
+        local filename="${1:?filename is required}"
+        local match_regex="${2:?match regex is required}"
+        local posix_regex=${3:-true}
+        local result
+
+        # We should avoid using 'sed in-place' substitutions
+        # 1) They are not compatible with files mounted from ConfigMap(s)
+        # 2) We found incompatibility issues with Debian10 and "in-place" substitutions
+        if [[ $posix_regex = true ]]; then
+            result="$(sed -E "/$match_regex/d" "$filename")"
+        else
+            result="$(sed "/$match_regex/d" "$filename")"
+        fi
+        echo "$result" > "$filename"
+    }
+
+    ########################
+    # Appends text after the last line matching a pattern
+    # Arguments:
+    #   $1 - file
+    #   $2 - match regex
+    #   $3 - contents to add
+    # Returns:
+    #   None
+    #########################
+    append_file_after_last_match() {
+        local file="${1:?missing file}"
+        local match_regex="${2:?missing pattern}"
+        local value="${3:?missing value}"
+
+        # We read the file in reverse, replace the first match (0,/pattern/s) and then reverse the results again
+        result="$(tac "$file" | sed -E "0,/($match_regex)/s||${value}\n\1|" | tac)"
+        echo "$result" > "$file"
+    }
+---
+{{- if or .Values.sentinel.masterService.enabled .Values.sentinel.service.createMaster }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ printf "%s-kubectl-scripts" (include "common.names.fullname" .) }}
+  namespace: {{ include "common.names.namespace" . | quote }}
+  labels: {{- include "common.labels.standard" ( dict "customLabels" .Values.commonLabels "context" $ ) | nindent 4 }}
+  {{- if .Values.commonAnnotations }}
+  annotations: {{- include "common.tplvalues.render" ( dict "value" .Values.commonAnnotations "context" $ ) | nindent 4 }}
+  {{- end }}
+data:
+  update-master-label.sh: |
+    #!/bin/bash
+    set -euo pipefail
+
+    LOCK_FILE="/etc/shared/update-master-label.lock"
+
+    main_logic() {
+        while true; do
+            while [ ! -f "/etc/shared/current" ] && [ ! -f "/etc/shared/terminate" ]; do
+                sleep 1
+            done
+
+            if [ -f "/etc/shared/current" ]; then
+                current_master=$(< /etc/shared/current)
+                previous_master=""
+                [ -f /etc/shared/previous ] && previous_master=$(< /etc/shared/previous)
+                
+                echo "Current master: $current_master"
+
+                if [ "$current_master" = "$previous_master" ]; then
+                    echo "Master has not changed, skipping label update and cleaning state"
+                    rm -f /etc/shared/current /etc/shared/previous
+                    continue
+                fi
+
+                {{- if .Values.useHostnames }}
+                selector_key="metadata.name"
+                {{- else }}
+                selector_key="status.podIP"
+                {{- end }}
+
+                if [ -n "$current_master" ]; then
+                    echo "Labeling new master $current_master"
+                    kubectl label pod --field-selector="$selector_key=$current_master" isMaster="true" --overwrite || echo "Failed to label master"
+                    kubectl label pod --field-selector="$selector_key=$current_master" app.kubernetes.io/role- || echo "Failed to remove role label"
+                fi
+
+                if [ -n "$previous_master" ]; then
+                    echo "Previous master: $previous_master"
+                    echo "Removing master label from previous master $previous_master"
+                    kubectl label pod --field-selector="$selector_key=$previous_master" isMaster="false" --overwrite || echo "Failed to remove label"
+                fi
+
+                echo "Cleaning state files"
+                rm -f /etc/shared/current /etc/shared/previous
+            fi
+
+            if [ -f "/etc/shared/terminate" ]; then
+                echo "Terminating on request"
+                rm "/etc/shared/terminate"
+                exit
+            fi
+        done
+    }
+
+    export -f main_logic
+
+    if command -v flock &> /dev/null; then
+        echo "flock found. Using lock file $LOCK_FILE to prevent race conditions."
+        flock -n "$LOCK_FILE" bash -c "main_logic"
+    else
+        echo "WARNING: flock command not found in the system. Running without lock."
+        echo "This could cause race conditions in a multi-replica setup."
+        main_logic
+    fi
+{{- end }}

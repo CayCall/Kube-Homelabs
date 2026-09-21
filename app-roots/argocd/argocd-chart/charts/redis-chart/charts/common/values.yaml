@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: APACHE-2.0
+
+## docker/common
+## It is required by CI/CD tools and processes.
+## @skip exampleValue
+##
+exampleValue: common-chart

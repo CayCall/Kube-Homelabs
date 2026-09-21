@@ -1,0 +1,40 @@
+annotations:
+  dhi.docker.com/helm.dependencies: |
+    - dhi/redis-chart:23.0.7@sha256:356970937e92373fee81e0f031f4454ae5b15e52f150052344cdd4e42959e14a
+    - dhi/haproxy-chart:1.30.1@sha256:fb2d42ed68e96620da629a2a5ed50289436243d9537f50aa50cc9f3c2d009049
+  dhi.docker.com/helm.images: |
+    - dhi/argocd:3.5.2-debian13@sha256:a9a6e703bf365892d8571b08aa8b4486cdbbd5dbc41f8f5bedff436a7560acce
+    - dhi/dex:2.45.1-debian13@sha256:696d741a0f673cf5acbc8000e6bf09f9b77a0eabffc3a42e59fa22b6995a7f33
+    - dhi/redis:8.10.1-debian13-compat@sha256:eb2fa0d3b374d7132896311c89ddcfa85f41021661f043f2953dd001d0822735
+    - dhi/redis-exporter:1.91.1-debian13@sha256:259e97a410c556e4c575a66a360cd49d715c9049df4cfa7716ee620e576ffb5d
+apiVersion: v2
+appVersion: 3.5.2
+dependencies:
+- alias: redis-ha
+  condition: redis-ha.enabled
+  name: redis-chart
+  repository: oci://dhi.io
+  version: 23.0.7
+- alias: haproxy
+  condition: haproxy.enabled
+  name: haproxy-chart
+  repository: oci://dhi.io
+  version: 1.30.1
+description: Docker Hardened Images Helm chart for Argo CD
+home: https://dhi.io
+icon: https://argo-cd.readthedocs.io/en/stable/assets/logo.png
+keywords:
+- argoproj
+- argocd
+- gitops
+kubeVersion: '>=1.25.0-0'
+maintainers:
+- email: dhi@docker.com
+  name: Docker Hardened Images
+  url: https://dhi.io
+- name: Upstream Official Project
+  url: https://github.com/argoproj/argo-helm
+name: argocd-chart
+sources:
+- https://github.com/docker-hardened-images/definitions
+version: 10.9.1

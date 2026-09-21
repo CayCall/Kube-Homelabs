@@ -1,0 +1,22 @@
+annotations:
+  dhi.docker.com/helm.images: |
+    - dhi/haproxy:3.4.4-debian13@sha256:b02bfb8092302a4adb72d8d0e420c1d3b14d6d466730872cc36cb3c46a334623
+apiVersion: v2
+appVersion: 3.4.4
+description: Docker Hardened Images Helm chart for HAProxy
+home: https://dhi.io
+icon: https://raw.githubusercontent.com/haproxytech/helm-charts/main/haproxy/chart-icon.png
+keywords:
+- haproxy
+kubeVersion: '>=1.17.0-0'
+maintainers:
+- email: dhi@docker.com
+  name: Docker Hardened Images
+  url: https://dhi.io
+- name: Upstream Official Project
+  url: https://github.com/haproxytech/helm-charts
+name: haproxy-chart
+sources:
+- https://github.com/docker-hardened-images/definitions
+type: application
+version: 1.30.1
