@@ -1,0 +1,1524 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kube Homelab KB</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpolygon points='16,2 28,8 31,21 23,31 9,31 1,21 4,8' fill='%23326ce5'/%3E%3Ccircle cx='16' cy='17' r='5' fill='none' stroke='white' stroke-width='2.5'/%3E%3C/svg%3E">
+</head>
+<body>
+<button class="btn menu-toggle" id="menu-toggle" aria-label="Open menu">☰ Menu</button>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand">
+      <svg width="34" height="34" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,2 28,8 31,21 23,31 9,31 1,21 4,8" fill="#326ce5"/><circle cx="16" cy="17" r="5" fill="none" stroke="white" stroke-width="2.5"/></svg>
+      <h1>Kube Homelab KB<small>Learn Kubernetes on your own cluster</small></h1>
+    </div>
+    <div class="progress">
+      <span id="progress-text"></span>
+      <div class="progress-bar"><span id="progress-fill"></span></div>
+    </div>
+    <input id="search" class="search" type="search" placeholder="Search pages…" aria-label="Search pages">
+    <nav id="nav"></nav>
+    <div class="sidebar-footer">
+      <button id="theme-toggle" type="button">◐ Theme</button>
+    </div>
+  </aside>
+
+  <main><div class="content">
+
+<!-- =====================================================================
+     START HERE
+     ===================================================================== -->
+<article id="start" data-title="Start Here" data-group="learn">
+  <h1>Start Here</h1>
+  <p class="lede">A beginner's guide to Kubernetes that uses your own homelab as the textbook. Every concept is tied back to something that is actually running on your machine.</p>
+
+  <h2>How to use this guide</h2>
+  <ul>
+    <li><strong>Learn Kubernetes</strong> (sidebar): lessons in order. Each one is <em>explanation → your repo → hands-on lab → check yourself</em>.</li>
+    <li><strong>This Repo</strong>: the knowledge base for <code>C:\Kuberenetes</code>: what's in it, what's deployed, open to-dos, a cheat sheet and a glossary.</li>
+    <li>Click <strong>Mark as complete</strong> at the bottom of a lesson to track progress. Progress is saved in this browser only.</li>
+    <li>Hover any code block and click <strong>Copy</strong>. Commands are written for <strong>PowerShell</strong>, run from <code>C:\Kuberenetes</code>.</li>
+  </ul>
+
+  <h2>Your lab at a glance</h2>
+<pre class="diagram">Windows 11 PC
+└── Docker Desktop (runs a Linux VM via WSL2)
+    ├── container: kind-control-plane     ← your ENTIRE Kubernetes cluster ("Nebula")
+    │     ├── namespace argocd            → Argo CD (GitOps tool, installed with Helm)
+    │     ├── namespace default           → nginx (2 pods) + a "kali" pod
+    │     ├── namespace knowledge-base    → this website (once you do the lab)
+    │     ├── namespace kube-system       → Kubernetes' own components
+    │     └── namespace local-path-storage→ creates disks for apps that need storage
+    └── container: kali-vm                ← plain Docker, NOT Kubernetes (SSH on port 2222)</pre>
+
+  <h2>Before the labs: 3 checks</h2>
+  <ol>
+    <li><strong>Docker Desktop is running</strong> and the cluster container is up:
+<pre><code>docker ps --format "table {{.Names}}\t{{.Status}}"</code></pre>
+      You should see <code>kind-control-plane</code> with status <code>Up</code>. If it's missing or stopped, run <code>docker start kind-control-plane</code>.</li>
+    <li><strong>kubectl is pointed at your cluster</strong>:
+<pre><code>kubectl config use-context Nebula
+kubectl get nodes</code></pre>
+      You should see one node, <code>kind-control-plane</code>, <code>Ready</code>.</li>
+    <li><strong>If you get <code>x509: certificate signed by unknown authority</code></strong>, that's AVG Antivirus intercepting the connection, not Kubernetes. Add <code>https://127.0.0.1</code> and <code>https://localhost</code> to <em>AVG → Settings → Basic Protection → Web Shield → Exceptions</em>. Full story in <a href="#/kubectl">Lesson 3</a>.</li>
+  </ol>
+
+  <div class="callout tip"><span class="label">The playground rule</span>
+    <p>Every lab works in a namespace called <code>playground</code>, so you can never break Argo CD or anything else that matters. When you're done, one command deletes everything you made: <code>kubectl delete namespace playground</code>.</p>
+  </div>
+
+  <h2>The lessons</h2>
+  <div class="cards">
+    <a class="card" href="#/containers"><strong>1. Containers &amp; Docker</strong><p>The thing Kubernetes runs.</p></a>
+    <a class="card" href="#/what-is-k8s"><strong>2. What Kubernetes Is</strong><p>Desired state and the cluster's parts.</p></a>
+    <a class="card" href="#/kubectl"><strong>3. kubectl &amp; Contexts</strong><p>How you talk to the cluster.</p></a>
+    <a class="card" href="#/pods"><strong>4. Pods</strong><p>The smallest unit.</p></a>
+    <a class="card" href="#/deployments"><strong>5. Deployments</strong><p>Self-healing, scaling, rollouts.</p></a>
+    <a class="card" href="#/namespaces"><strong>6. Namespaces &amp; Labels</strong><p>Organizing and selecting.</p></a>
+    <a class="card" href="#/networking"><strong>7. Networking &amp; Services</strong><p>How traffic finds pods.</p></a>
+    <a class="card" href="#/config"><strong>8. ConfigMaps &amp; Secrets</strong><p>Configuration without rebuilding.</p></a>
+    <a class="card" href="#/storage"><strong>9. Storage</strong><p>Data that survives restarts.</p></a>
+    <a class="card" href="#/helm"><strong>10. Helm</strong><p>Packaging apps.</p></a>
+    <a class="card" href="#/gitops"><strong>11. GitOps &amp; Argo CD</strong><p>Git as the source of truth.</p></a>
+    <a class="card" href="#/secrets-mgmt"><strong>12. Managing Secrets</strong><p>Keeping passwords out of git.</p></a>
+    <a class="card" href="#/troubleshooting"><strong>13. Troubleshooting</strong><p>What to do when it breaks.</p></a>
+  </div>
+</article>
+
+<!-- =====================================================================
+     1. CONTAINERS
+     ===================================================================== -->
+<article id="containers" data-title="1. Containers & Docker" data-group="learn">
+  <h1>1. Containers &amp; Docker</h1>
+  <p class="lede">Kubernetes doesn't run "apps". It runs containers. So that's where we start.</p>
+
+  <h2>The problem containers solve</h2>
+  <p>"It works on my machine" happens because an app depends on a specific OS, libraries and settings. A <strong>container</strong> packages the app <em>together with</em> everything it needs, so it runs the same everywhere.</p>
+  <p>A container is <strong>not</strong> a virtual machine. A VM fakes an entire computer, with its own kernel, and takes minutes to boot. A container is just a normal process on the host that has been given its own isolated view of the filesystem, network and process list. It shares the host's kernel, so it starts in milliseconds.</p>
+<pre class="diagram">   Virtual machines                      Containers
+┌──────┐ ┌──────┐ ┌──────┐         ┌──────┐ ┌──────┐ ┌──────┐
+│ App  │ │ App  │ │ App  │         │ App  │ │ App  │ │ App  │
+│ Libs │ │ Libs │ │ Libs │         │ Libs │ │ Libs │ │ Libs │
+│Guest │ │Guest │ │Guest │         └──────┘ └──────┘ └──────┘
+│  OS  │ │  OS  │ │  OS  │         ┌──────────────────────────┐
+└──────┘ └──────┘ └──────┘         │  Container runtime       │
+┌──────────────────────────┐       ├──────────────────────────┤
+│       Hypervisor         │       │  Host OS kernel (shared) │
+└──────────────────────────┘       └──────────────────────────┘</pre>
+
+  <h2>Image vs container</h2>
+  <div class="cards">
+    <div class="card"><strong>Image</strong><p>A read-only template: a snapshot of a filesystem plus a start command. Like a recipe, or a class in programming.</p></div>
+    <div class="card"><strong>Container</strong><p>A running instance of an image. Like the dish cooked from the recipe. You can run many containers from one image.</p></div>
+    <div class="card"><strong>Registry</strong><p>Where images are stored and downloaded from: Docker Hub (<code>docker.io</code>), <code>quay.io</code>, <code>ghcr.io</code>, <code>dhi.io</code>.</p></div>
+  </div>
+  <p>An image name looks like <code>registry/repository:tag</code>, e.g. <code>quay.io/argoproj/argocd:v3.5.3</code>. If you leave off the registry, Docker Hub is assumed (<code>nginx</code> = <code>docker.io/library/nginx</code>).</p>
+
+  <div class="callout warn"><span class="label">Why <code>:latest</code> is risky</span>
+    <p>A tag is just a label that can be moved. <code>nginx:latest</code> today and <code>nginx:latest</code> next month can be completely different software. Your <code>nginx.yaml</code> and Kali Dockerfile both use moving tags. Production setups pin a version (<code>nginx:1.29</code>) or even a <strong>digest</strong> (<code>@sha256:…</code>), which can never change. Your vendored Argo CD chart pins digests in its <code>Chart.yaml</code>.</p>
+  </div>
+
+  <h2>A Dockerfile: your Kali "VM", line by line</h2>
+  <div class="callout repo"><span class="label">In your repo</span><p><code>app-roots/KaliLinux-VirtualMachine/Dockerfile</code>. Despite the folder name, this is a container, not a VM.</p></div>
+<pre><code>FROM kalilinux/kali-rolling                 # start from someone else's image
+RUN apt-get update &amp;&amp; apt-get install -y \  # each RUN adds a "layer" to the image
+    openssh-server openssh-client \
+    &amp;&amp; rm -rf /var/lib/apt/lists/*          # clean up in the same layer to keep it small
+RUN mkdir -p /run/sshd
+RUN echo 'PermitRootLogin yes' &gt;&gt; /etc/ssh/sshd_config
+RUN echo 'PasswordAuthentication yes' &gt;&gt; /etc/ssh/sshd_config
+RUN ssh-keygen -A                           # generate the server's host keys
+RUN echo 'root:…' | chpasswd                # ⚠ password baked into the image + git
+EXPOSE 22 443 80                            # documentation only, doesn't open anything
+CMD ["/usr/sbin/sshd", "-D"]                # the process the container runs</code></pre>
+  <p>Key idea: <strong>a container lives exactly as long as its main process (<code>CMD</code>)</strong>. <code>sshd -D</code> runs in the foreground forever, so the container stays up.</p>
+
+  <h2>docker compose: running it with settings</h2>
+<pre><code>services:
+  kali:
+    build: .                 # build the Dockerfile in this folder
+    container_name: kali-vm
+    ports:
+      - "2222:22"            # HOST:CONTAINER, so localhost:2222 → container port 22
+      - "8080:80"
+      - "8000:443"
+    restart: unless-stopped  # come back automatically when Docker restarts</code></pre>
+  <p><code>"2222:22"</code> is the single most important thing to read correctly: <strong>left = your PC, right = inside the container</strong>. Kubernetes uses the same idea in port-forwarding.</p>
+
+  <h2>Docker vs Kubernetes</h2>
+  <table>
+    <tr><th></th><th>Docker / compose</th><th>Kubernetes</th></tr>
+    <tr><td>Scope</td><td>One machine</td><td>Many machines (a cluster) as one</td></tr>
+    <tr><td>Container dies</td><td>Maybe restarts (restart policy)</td><td>Always replaced to match desired state</td></tr>
+    <tr><td>Scaling</td><td>Manual</td><td><code>replicas: 5</code></td></tr>
+    <tr><td>Networking</td><td>Per-host port mappings</td><td>Cluster-wide pod network, Services, DNS</td></tr>
+    <tr><td>Your lab</td><td><code>kali-vm</code></td><td>Everything inside <code>kind-control-plane</code></td></tr>
+  </table>
+
+  <div class="callout repo"><span class="label">Mind-bender: kind = Kubernetes IN Docker</span>
+    <p>Your whole Kubernetes cluster is a single Docker container named <code>kind-control-plane</code>. Inside it, Kubernetes runs its <em>own</em> containers using <strong>containerd</strong> (not Docker). So your nginx pods are containers inside a container. That's why <code>docker ps</code> on Windows doesn't show your nginx pods.</p>
+  </div>
+
+  <section class="lab">
+    <h2>Lab: poke at containers</h2>
+    <ol>
+      <li>List running containers and images on your PC:
+<pre><code>docker ps
+docker images</code></pre></li>
+      <li>Open a shell <em>inside</em> the Kali container (no SSH needed), look around, leave:
+<pre><code>docker exec -it kali-vm bash
+cat /etc/os-release
+ps aux          # notice how few processes: sshd is PID 1
+exit</code></pre></li>
+      <li>Look inside the kind node to see Kubernetes' containers (the nested ones):
+<pre><code>docker exec kind-control-plane crictl ps</code></pre>
+        You'll see <code>nginx</code>, <code>argocd-server</code>, <code>coredns</code> and the rest, invisible to <code>docker ps</code>.</li>
+      <li>See exactly how a port is mapped:
+<pre><code>docker port kali-vm</code></pre></li>
+    </ol>
+  </section>
+
+  <section class="quiz">
+    <h2>Check yourself</h2>
+    <details><summary>What's the difference between an image and a container?</summary><p>An image is the read-only template; a container is a running instance of it. One image → many containers.</p></details>
+    <details><summary>In <code>"8000:443"</code>, which number is on your PC?</summary><p><code>8000</code>. Left is the host, right is the container. Browsing to <code>https://localhost:8000</code> reaches port 443 inside <code>kali-vm</code>.</p></details>
+    <details><summary>Why don't your nginx pods show up in <code>docker ps</code>?</summary><p>They run inside the <code>kind-control-plane</code> container, managed by containerd. Docker on Windows only sees the outer container.</p></details>
+  </section>
+</article>
+
+<!-- =====================================================================
+     2. WHAT IS KUBERNETES
+     ===================================================================== -->
+<article id="what-is-k8s" data-title="2. What Kubernetes Is" data-group="learn">
+  <h1>2. What Kubernetes Is</h1>
+  <p class="lede">Kubernetes is a system that keeps reality matching what you asked for, forever.</p>
+
+  <h2>The one idea: desired state</h2>
+  <p>You don't tell Kubernetes <em>"start 2 nginx containers"</em> (an instruction). You tell it <em>"there should be 2 nginx containers"</em> (a desired state). Kubernetes then runs a <strong>control loop</strong>, constantly:</p>
+<pre class="diagram">     ┌───────────────────────────────────────────┐
+     │                                           │
+     ▼                                           │
+ 1. OBSERVE  ──▶  2. COMPARE  ──▶  3. ACT  ──────┘
+ "1 pod running"   "want 2, have 1"  "start 1 more"</pre>
+  <p>It's like a thermostat: you set 21°C, and it keeps working until the room is 21°C, and keeps checking after. Kill a pod, and the loop notices and makes a new one. This is called <strong>reconciliation</strong>, and it's the reason Kubernetes "self-heals".</p>
+  <p>You describe desired state in <strong>YAML</strong> files (declarative), and submit them with <code>kubectl apply</code>.</p>
+
+  <h2>Anatomy of every Kubernetes object</h2>
+  <div class="callout repo"><span class="label">In your repo</span><p><code>nginx.yaml</code>, the first thing you ever deployed.</p></div>
+<pre><code>apiVersion: apps/v1        # which API group/version defines this type
+kind: Deployment           # what type of object
+metadata:
+  name: nginx              # its name (unique per kind, per namespace)
+spec:                      # ← DESIRED state: what YOU want
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:latest
+          ports:
+            - containerPort: 80
+# status:                  # ← ACTUAL state: Kubernetes fills this in. You never write it.</code></pre>
+  <p><code>spec</code> vs <code>status</code> is the desired-state idea in code. The gap between them is what controllers work to close.</p>
+
+  <h2>The parts of a cluster</h2>
+<pre class="diagram">┌──────────────────────── CONTROL PLANE (the brain) ────────────────────────┐
+│                                                                           │
+│  kube-apiserver ◀── everything talks ONLY to this (kubectl, Argo CD, …)   │
+│       │                                                                   │
+│       ├── etcd                   the database: stores all desired state   │
+│       ├── kube-scheduler         picks which node a new pod runs on       │
+│       └── kube-controller-manager runs the control loops (Deployments…)   │
+└───────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────── WORKER NODE (the muscle) ─────────────────────────┐
+│  kubelet          node agent: "API says run pod X here", makes it happen  │
+│  containerd       actually starts/stops containers                        │
+│  kube-proxy       programs networking rules for Services                  │
+│  CNI (kindnet)    gives every pod an IP and connects them                 │
+└───────────────────────────────────────────────────────────────────────────┘</pre>
+
+  <div class="callout repo"><span class="label">In your cluster</span>
+    <p>kind squashes both boxes into one node, <code>kind-control-plane</code>. Every part above is a real pod you can see in the <code>kube-system</code> namespace: <code>kube-apiserver-kind-control-plane</code>, <code>etcd-kind-control-plane</code>, <code>kube-scheduler-…</code>, <code>kube-controller-manager-…</code>, <code>kube-proxy-…</code>, <code>kindnet-…</code>, plus <code>coredns</code> (cluster DNS). Real clusters have 3 control-plane nodes and many workers.</p>
+  </div>
+
+  <h2>What happens when you <code>kubectl apply -f nginx.yaml</code></h2>
+  <ol>
+    <li><strong>kubectl</strong> sends the YAML to the <strong>API server</strong> over HTTPS.</li>
+    <li>The API server validates it and saves it in <strong>etcd</strong>. That's it, nothing is running yet.</li>
+    <li>The <strong>Deployment controller</strong> notices a new Deployment and creates a <strong>ReplicaSet</strong>, which creates 2 <strong>Pod</strong> objects (still just records).</li>
+    <li>The <strong>scheduler</strong> sees 2 pods with no node, and assigns them to a node.</li>
+    <li>The <strong>kubelet</strong> on that node sees pods assigned to it and tells <strong>containerd</strong> to pull <code>nginx:latest</code> and start it.</li>
+    <li>kubelet reports back; <code>status</code> is updated. <code>kubectl get pods</code> shows <code>Running</code>.</li>
+  </ol>
+  <p>Notice nobody gives orders directly; every component just watches the API server and does its one job.</p>
+
+  <section class="lab">
+    <h2>Lab: meet your cluster</h2>
+    <ol>
+      <li>Your one node, with details:
+<pre><code>kubectl get nodes -o wide</code></pre></li>
+      <li>The control-plane components, running as pods:
+<pre><code>kubectl get pods -n kube-system</code></pre></li>
+      <li>Every type of object your cluster understands (notice <code>applications</code>, added by Argo CD):
+<pre><code>kubectl api-resources</code></pre></li>
+      <li>Built-in documentation for any field. This is incredibly useful:
+<pre><code>kubectl explain deployment.spec.replicas
+kubectl explain pod.spec.containers</code></pre></li>
+      <li>See the <code>status</code> Kubernetes wrote for your nginx Deployment:
+<pre><code>kubectl get deployment nginx -o yaml</code></pre>
+        Scroll to the bottom: <code>status.readyReplicas: 2</code>.</li>
+    </ol>
+  </section>
+
+  <section class="quiz">
+    <h2>Check yourself</h2>
+    <details><summary>What's the difference between <code>spec</code> and <code>status</code>?</summary><p><code>spec</code> is what you want (you write it). <code>status</code> is what actually exists (Kubernetes writes it). Controllers work to make status match spec.</p></details>
+    <details><summary>Which component does kubectl talk to?</summary><p>Only the <strong>kube-apiserver</strong>. Nothing talks to etcd or kubelets directly.</p></details>
+    <details><summary>Which component decides what node a pod runs on?</summary><p>The <strong>kube-scheduler</strong>. In your one-node cluster the answer is always <code>kind-control-plane</code>.</p></details>
+  </section>
+</article>
+
+<!-- =====================================================================
+     3. KUBECTL
+     ===================================================================== -->
+<article id="kubectl" data-title="3. kubectl & Contexts" data-group="learn">
+  <h1>3. kubectl, Contexts &amp; kubeconfig</h1>
+  <p class="lede">kubectl is your remote control. kubeconfig tells it which TV to point at.</p>
+
+  <h2>kubeconfig: the address book</h2>
+  <p>kubectl reads <code>%USERPROFILE%\.kube\config</code>. It has three lists:</p>
+  <table>
+    <tr><th>Section</th><th>Holds</th><th>Yours</th></tr>
+    <tr><td><code>clusters</code></td><td>API server address + the CA certificate to trust</td><td><code>kind-kind</code> → <code>https://127.0.0.1:53551</code><br><code>docker-desktop</code> → <code>https://127.0.0.1:53022</code></td></tr>
+    <tr><td><code>users</code></td><td>Credentials (here: client certificates)</td><td><code>kind-kind</code>, <code>docker-desktop</code></td></tr>
+    <tr><td><code>contexts</code></td><td>A named pair: <em>cluster + user + default namespace</em></td><td><strong><code>Nebula</code></strong>, <code>docker-desktop</code></td></tr>
+  </table>
+  <p>Exactly one context is <strong>current</strong>. Every kubectl command goes to the current context unless you add <code>--context</code>.</p>
+
+  <div class="callout warn"><span class="label">Gotchas from your setup</span>
+    <ul>
+      <li>Context names are <strong>case-sensitive</strong>. Yours is <code>Nebula</code>; <code>docs/argo-cd-deploy.md</code> says <code>nebula</code>.</li>
+      <li>The current context was <code>docker-desktop</code>, not your kind cluster. Always check with <code>kubectl config current-context</code> when something looks wrong.</li>
+    </ul>
+  </div>
+
+  <h2>Real-world lesson: the AVG x509 error</h2>
+  <p>kubectl connects over HTTPS. The kubeconfig contains your cluster's own <strong>Certificate Authority (CA)</strong>, and kubectl will <em>only</em> accept a server certificate signed by that CA. That's how it knows it's talking to your real cluster and not an impostor.</p>
+<pre class="diagram">kubectl ──HTTPS──▶ [ AVG Web Shield ] ──HTTPS──▶ kube-apiserver
+                    re-signs the cert
+                    with "AVG Untrusted Root"
+kubectl: "This isn't signed by my cluster's CA. Refusing." → x509 error</pre>
+  <p>AVG's "HTTPS scanning" is a deliberate man-in-the-middle, and kubectl correctly refused it. Lesson: <strong>x509 / certificate errors are usually about <em>who</em> is answering, not about Kubernetes being broken</strong>. Fix: add an exception for <code>127.0.0.1</code>/<code>localhost</code> in AVG Web Shield.</p>
+  <p>Workaround while it's broken: run kubectl <em>inside</em> the node, where AVG can't see it:</p>
+<pre><code>docker exec kind-control-plane kubectl --kubeconfig /etc/kubernetes/admin.conf get pods -A</code></pre>
+
+  <h2>The verbs you'll use 90% of the time</h2>
+  <table>
+    <tr><th>Command</th><th>What it does</th></tr>
+    <tr><td><code>kubectl get &lt;type&gt;</code></td><td>List objects. Add <code>-o wide</code>, <code>-o yaml</code>, <code>-w</code> (watch), <code>--show-labels</code></td></tr>
+    <tr><td><code>kubectl describe &lt;type&gt; &lt;name&gt;</code></td><td>Human-readable details + <strong>Events</strong> (your #1 debugging tool)</td></tr>
+    <tr><td><code>kubectl apply -f file.yaml</code></td><td>Make the cluster match this file (create or update)</td></tr>
+    <tr><td><code>kubectl delete -f file.yaml</code></td><td>Delete what the file describes</td></tr>
+    <tr><td><code>kubectl logs &lt;pod&gt;</code></td><td>Container output. <code>-f</code> to follow, <code>--previous</code> for the last crash</td></tr>
+    <tr><td><code>kubectl exec -it &lt;pod&gt; -- sh</code></td><td>Shell inside a container</td></tr>
+    <tr><td><code>kubectl port-forward svc/&lt;name&gt; 8091:80</code></td><td>Tunnel from your PC into the cluster</td></tr>
+    <tr><td><code>kubectl explain &lt;type.field&gt;</code></td><td>Built-in docs</td></tr>
+  </table>
+  <p><strong>Scope flags:</strong> <code>-n argocd</code> = one namespace. <code>-A</code> = all namespaces. No flag = the context's default namespace (usually <code>default</code>).</p>
+
+  <h3>Declarative vs imperative</h3>
+  <p><code>kubectl create deployment web --image=nginx</code> is <strong>imperative</strong>: quick, but the only record is in the cluster. <code>kubectl apply -f web.yaml</code> is <strong>declarative</strong>: the file is the record, it can live in git, and Argo CD can apply it for you. Use imperative for experiments, declarative for anything you want to keep.</p>
+
+  <section class="lab">
+    <h2>Lab: drive kubectl</h2>
+    <ol>
+      <li>See your contexts, switch to the kind cluster, confirm:
+<pre><code>kubectl config get-contexts
+kubectl config use-context Nebula
+kubectl config current-context</code></pre></li>
+      <li>See everything, everywhere:
+<pre><code>kubectl get pods -A
+kubectl get all -n argocd</code></pre></li>
+      <li>Create the playground namespace you'll use for all labs:
+<pre><code>kubectl create namespace playground</code></pre></li>
+      <li>(Optional) A shortcut, since you'll type kubectl a lot. Add it to your PowerShell profile (<code>notepad $PROFILE</code>) to keep it:
+<pre><code>Set-Alias k kubectl
+k get nodes</code></pre></li>
+      <li>Pull one field out with jsonpath:
+<pre><code>kubectl get pods -n argocd -o jsonpath="{.items[*].metadata.name}"</code></pre></li>
+    </ol>
+  </section>
+
+  <section class="quiz">
+    <h2>Check yourself</h2>
+    <details><summary>What are the three parts of a context?</summary><p>A cluster, a user, and (optionally) a default namespace.</p></details>
+    <details><summary>You run <code>kubectl get pods</code> and see nothing, but you know nginx is running. Name two possible reasons.</summary><p>Wrong context (e.g. <code>docker-desktop</code>), or wrong namespace (it lives in <code>default</code> and you're looking elsewhere). Try <code>kubectl get pods -A</code>.</p></details>
+    <details><summary>What did the x509 error actually mean?</summary><p>The certificate kubectl received wasn't signed by your cluster's CA, because AVG replaced it. kubectl refused to trust it.</p></details>
+  </section>
+</article>
+
+<!-- =====================================================================
+     4. PODS
+     ===================================================================== -->
+<article id="pods" data-title="4. Pods" data-group="learn">
+  <h1>4. Pods</h1>
+  <p class="lede">The smallest thing Kubernetes runs. Important to understand, but you'll rarely create one by hand.</p>
+
+  <h2>What a pod is</h2>
+  <p>A <strong>pod</strong> is a wrapper around one (usually) or more containers that:</p>
+  <ul>
+    <li>share one <strong>IP address</strong> (containers in a pod talk via <code>localhost</code>),</li>
+    <li>can share <strong>volumes</strong> (folders),</li>
+    <li>are always <strong>scheduled together</strong> on the same node.</li>
+  </ul>
+  <p>Multi-container pods are for tightly coupled helpers ("sidecars"), e.g. a log shipper next to an app. Most pods have one container.</p>
+
+  <div class="callout warn"><span class="label">Pods are disposable</span>
+    <p>A pod is never repaired or moved. If it dies or its node dies, it's gone, and something else must create a <em>new</em> pod (with a new name and a new IP). That "something else" is a controller like a Deployment, which is the next lesson.</p>
+  </div>
+
+  <h2>A minimal pod</h2>
+<pre><code>apiVersion: v1
+kind: Pod
+metadata:
+  name: hello
+  labels:
+    app: hello
+spec:
+  containers:
+    - name: web
+      image: nginx:1.29
+      ports:
+        - containerPort: 80</code></pre>
+
+  <h2>Pod lifecycle</h2>
+  <table>
+    <tr><th>Phase</th><th>Meaning</th></tr>
+    <tr><td><code>Pending</code></td><td>Accepted, but not running yet: waiting for a node, or pulling the image</td></tr>
+    <tr><td><code>Running</code></td><td>Bound to a node, at least one container running</td></tr>
+    <tr><td><code>Succeeded</code></td><td>All containers exited with code 0 (normal for batch Jobs)</td></tr>
+    <tr><td><code>Failed</code></td><td>A container exited with an error and won't be restarted</td></tr>
+  </table>
+  <p>The <code>RESTARTS</code> column counts container restarts <em>inside the same pod</em>. Your pods show 3 to 5 restarts. That's not a bug: it's every time Docker Desktop (and so the whole node) was restarted.</p>
+
+  <div class="callout repo"><span class="label">In your cluster: the bare <code>kali</code> pod</span>
+    <p><code>default/kali</code> is a pod created by hand (probably <code>kubectl run kali --image=kalilinux/kali-rolling -it -- /bin/bash</code>) on 2026-09-21. It has no controller and no YAML in git. If you delete it, nothing brings it back, and there's no record of how it was made. That's exactly why you'd normally use a Deployment, and keep the YAML in git.</p>
+  </div>
+
+  <section class="lab">
+    <h2>Lab: a pod's whole life</h2>
+    <ol>
+      <li>Create a pod and watch it start (Ctrl+C to stop watching):
+<pre><code>kubectl run hello --image=nginx:1.29 -n playground
+kubectl get pods -n playground -w</code></pre>
+        You'll see <code>ContainerCreating</code> → <code>Running</code>.</li>
+      <li>Read its details. Scroll down to <strong>Events</strong> at the bottom: scheduling, pulling, starting.
+<pre><code>kubectl describe pod hello -n playground</code></pre></li>
+      <li>See its IP (from the pod network, <code>10.244.x.x</code>) and node:
+<pre><code>kubectl get pod hello -n playground -o wide</code></pre></li>
+      <li>Read its logs and look inside:
+<pre><code>kubectl logs hello -n playground
+kubectl exec -it hello -n playground -- sh
+cat /usr/share/nginx/html/index.html
+exit</code></pre></li>
+      <li>Delete it, then check: it's gone for good. Remember this when you get to Deployments.
+<pre><code>kubectl delete pod hello -n playground
+kubectl get pods -n playground</code></pre></li>
+    </ol>
+  </section>
+
+  <section class="quiz">
+    <h2>Check yourself</h2>
+    <details><summary>Two containers in the same pod: how do they talk to each other?</summary><p>Over <code>localhost</code>. They share the pod's network namespace and IP.</p></details>
+    <details><summary>A pod's node crashes. Does Kubernetes move the pod?</summary><p>No. Pods are never moved. A controller (like a Deployment) notices it's missing and creates a <em>new</em> pod elsewhere. A bare pod just disappears.</p></details>
+    <details><summary>Where's the first place to look when a pod is stuck in <code>Pending</code>?</summary><p><code>kubectl describe pod &lt;name&gt;</code>, specifically the Events section at the bottom.</p></details>
+  </section>
+</article>
+
+<!-- =====================================================================
+     5. DEPLOYMENTS
+     ===================================================================== -->
+<article id="deployments" data-title="5. Deployments" data-group="learn">
+  <h1>5. Deployments &amp; ReplicaSets</h1>
+  <p class="lede">How you actually run apps: self-healing, scaling, and zero-downtime updates.</p>
+
+  <h2>The chain of ownership</h2>
+<pre class="diagram">Deployment  nginx                 "I want 2 replicas of THIS pod template,
+   │                               and I manage updates between versions"
+   ▼
+ReplicaSet  nginx-59c4c87bc6      "I keep exactly 2 pods of ONE version alive"
+   │                               (the hash = a fingerprint of the template)
+   ├──▶ Pod  nginx-59c4c87bc6-gh4zr
+   └──▶ Pod  nginx-59c4c87bc6-smgd2</pre>
+  <p>Those are your real pod names. The naming pattern tells you who owns what: <code>&lt;deployment&gt;-&lt;replicaset-hash&gt;-&lt;random&gt;</code>.</p>
+
+  <h2>What the Deployment gives you</h2>
+  <div class="cards">
+    <div class="card"><strong>Self-healing</strong><p>Pod deleted or crashed? The ReplicaSet makes a new one immediately.</p></div>
+    <div class="card"><strong>Scaling</strong><p>Change <code>replicas</code> and pods are added or removed.</p></div>
+    <div class="card"><strong>Rolling updates</strong><p>Change the image and pods are replaced a few at a time, so the app never fully goes down.</p></div>
+    <div class="card"><strong>Rollback</strong><p>Old ReplicaSets are kept, so you can go back to the previous version in one command.</p></div>
+  </div>
+
+  <h2>The selector ↔ labels contract</h2>
+<pre><code>spec:
+  selector:
+    matchLabels:
+      app: nginx        # "the pods I own are the ones labeled app=nginx"
+  template:
+    metadata:
+      labels:
+        app: nginx      # "pods I create get labeled app=nginx"  ← MUST match</code></pre>
+  <p>If these don't match, Kubernetes rejects the Deployment. This label-matching idea comes back with Services in Lesson 7.</p>
+
+  <div class="callout repo"><span class="label">In your repo</span>
+    <p>Both <code>nginx.yaml</code> (2 replicas) and <code>app-roots/values.yaml</code> (3 replicas) define a Deployment called <code>nginx</code> in the same namespace. The cluster is running 2, so <code>nginx.yaml</code> was applied. If you ever apply <code>values.yaml</code>, it won't create a second app; it will <strong>update the same one</strong> to 3 replicas. Same kind + name + namespace = same object.</p>
+  </div>
+
+  <h2>Other controllers in your cluster</h2>
+  <table>
+    <tr><th>Kind</th><th>Use it for</th><th>Example in your cluster</th></tr>
+    <tr><td><strong>Deployment</strong></td><td>Stateless apps (any pod is as good as another)</td><td><code>nginx</code>, <code>argocd-server</code>, <code>coredns</code></td></tr>
+    <tr><td><strong>StatefulSet</strong></td><td>Pods that need a stable identity/name and their own disk (databases)</td><td><code>argocd-application-controller</code> (pod is always <code>-0</code>)</td></tr>
+    <tr><td><strong>DaemonSet</strong></td><td>Exactly one pod <em>per node</em> (agents)</td><td><code>kindnet</code>, <code>kube-proxy</code></td></tr>
+    <tr><td><strong>Job / CronJob</strong></td><td>Run to completion / on a schedule</td><td>none yet</td></tr>
+  </table>
+
+  <section class="lab">
+    <h2>Lab: break it, scale it, update it, undo it</h2>
+    <ol>
+      <li>Create a Deployment from YAML (paste the whole block into PowerShell):
+<pre><code>@'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: playground
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.28
+          ports:
+            - containerPort: 80
+'@ | kubectl apply -f -</code></pre></li>
+      <li>See the whole chain:
+<pre><code>kubectl get deploy,rs,pods -n playground</code></pre></li>
+      <li><strong>Self-healing.</strong> Open a second PowerShell window and watch, then delete a pod from the first window (use a real name from the list):
+<pre><code># window 2
+kubectl get pods -n playground -w
+# window 1
+kubectl delete pod -n playground &lt;one-of-the-web-pod-names&gt;</code></pre>
+        A replacement appears within a second or two. Compare that with the bare pod in Lesson 4.</li>
+      <li><strong>Scale:</strong>
+<pre><code>kubectl scale deployment web -n playground --replicas=5
+kubectl get pods -n playground</code></pre></li>
+      <li><strong>Rolling update</strong> to a new image version, and watch it roll:
+<pre><code>kubectl set image deployment/web nginx=nginx:1.29 -n playground
+kubectl rollout status deployment/web -n playground
+kubectl get rs -n playground</code></pre>
+        Two ReplicaSets now: the new one has 5 pods, the old one 0 (kept for rollback).</li>
+      <li><strong>Roll back:</strong>
+<pre><code>kubectl rollout history deployment/web -n playground
+kubectl rollout undo deployment/web -n playground
+kubectl get deployment web -n playground -o wide</code></pre>
+        The image is back to <code>nginx:1.28</code>. Keep <code>web</code> running for Lesson 7.</li>
+    </ol>
+    <div class="callout tip"><span class="label">Note</span><p><code>scale</code> and <code>set image</code> are imperative shortcuts. In a GitOps setup you'd change the YAML in git instead, and Argo CD would reverse any manual change.</p></div>
+  </section>
+
+  <section class="quiz">
+    <h2>Check yourself</h2>
+    <details><summary>Deployment, ReplicaSet, Pod: which one actually creates pods?</summary><p>The ReplicaSet. The Deployment creates and manages ReplicaSets, one per version of the pod template.</p></details>
+    <details><summary>Why does a rolling update leave an old ReplicaSet with 0 pods?</summary><p>So <code>kubectl rollout undo</code> can scale it back up instantly.</p></details>
+    <details><summary>Which controller would you use for a database? For a log agent on every node?</summary><p>StatefulSet for the database; DaemonSet for the per-node agent.</p></details>
+  </section>
+</article>
+
+<!-- =====================================================================
+     6. NAMESPACES & LABELS
+     ===================================================================== -->
+<article id="namespaces" data-title="6. Namespaces & Labels" data-group="learn">
+  <h1>6. Namespaces, Labels &amp; Selectors</h1>
+  <p class="lede">Namespaces are folders. Labels are tags. Selectors are searches over tags.</p>
+
+  <h2>Namespaces</h2>
+  <p>A namespace groups related objects. Names only need to be unique <em>within</em> a namespace, so <code>playground/web</code> and <code>default/web</code> can coexist.</p>
+  <table>
+    <tr><th>Your namespace</th><th>Contains</th></tr>
+    <tr><td><code>default</code></td><td>Where things go if you don't say: <code>nginx</code>, <code>kali</code></td></tr>
+    <tr><td><code>argocd</code></td><td>All of Argo CD</td></tr>
+    <tr><td><code>kube-system</code></td><td>Kubernetes' own components. Don't touch.</td></tr>
+    <tr><td><code>kube-public</code>, <code>kube-node-lease</code></td><td>Internal housekeeping</td></tr>
+    <tr><td><code>local-path-storage</code></td><td>The storage provisioner (Lesson 9)</td></tr>
+    <tr><td><code>playground</code></td><td>Your lab sandbox</td></tr>
+  </table>
+  <p>Deleting a namespace deletes <strong>everything inside it</strong>. Great for cleanup, dangerous with the wrong name.</p>
+  <div class="callout warn"><span class="label">Not a security wall</span><p>By default, pods in different namespaces can still talk to each other freely. Isolation needs RBAC (who can do what) and NetworkPolicies (who can talk to whom) on top.</p></div>
+  <p>Some objects aren't in any namespace (<em>cluster-scoped</em>): Nodes, Namespaces themselves, StorageClasses, ClusterRoles, CRDs. See them with <code>kubectl api-resources --namespaced=false</code>.</p>
+
+  <h2>Labels and selectors</h2>
+  <p>A <strong>label</strong> is a key/value tag on any object: <code>app: nginx</code>, <code>env: dev</code>. A <strong>selector</strong> finds objects by label. This is how Kubernetes wires things together <em>without</em> hard-coding names:</p>
+<pre class="diagram">Deployment  selector: app=web ──┐
+                                ├──▶  Pod  labels: app=web   ✓
+Service     selector: app=web ──┘     Pod  labels: app=web   ✓
+                                      Pod  labels: app=other ✗</pre>
+  <p>Pods come and go with random names, but their labels stay predictable, so labels are how everything finds them.</p>
+
+  <div class="callout repo"><span class="label">In your cluster</span>
+    <p>The Argo CD Helm chart uses the standard recommended labels: <code>app.kubernetes.io/name</code>, <code>app.kubernetes.io/instance: argocd</code>, <code>app.kubernetes.io/part-of: argocd</code>, <code>app.kubernetes.io/managed-by: Helm</code>, <code>helm.sh/chart: argo-cd-10.9.2</code>. That last label is how we found out which chart is <em>really</em> deployed.</p>
+  </div>
+  <p><strong>Annotations</strong> look similar but aren't for selecting. They hold extra info for tools (e.g. <code>kubectl.kubernetes.io/last-applied-configuration</code>).</p>
+
+  <section class="lab">
+    <h2>Lab: labels in action</h2>
+    <ol>
+      <li>Show labels and filter by them:
+<pre><code>kubectl get pods -n playground --show-labels
+kubectl get pods -A -l app.kubernetes.io/part-of=argocd</code></pre></li>
+      <li>Add a label to one pod, then select it:
+<pre><code>kubectl label pod -n playground &lt;one-web-pod&gt; tier=frontend
+kubectl get pods -n playground -l tier=frontend</code></pre></li>
+      <li><strong>Experiment:</strong> change a pod's <code>app</code> label so the Deployment no longer "owns" it:
+<pre><code>kubectl label pod -n playground &lt;one-web-pod&gt; app=orphan --overwrite
+kubectl get pods -n playground --show-labels</code></pre>
+        The Deployment now sees one pod too few and creates a replacement, while the orphan keeps running on its own. Clean it up: <code>kubectl delete pod -n playground -l app=orphan</code>.</li>
+      <li>Set your default namespace so you can stop typing <code>-n playground</code> (and switch back later):
+<pre><code>kubectl config set-context --current --namespace=playground
+kubectl get pods
+kubectl config set-context --current --namespace=default</code></pre></li>
+    </ol>
+  </section>
+
+  <section class="quiz">
+    <h2>Check yourself</h2>
+    <details><summary>Can two Deployments both be called <code>web</code>?</summary><p>Yes, if they're in different namespaces.</p></details>
+    <details><summary>Why did relabeling a pod make the Deployment create a new one?</summary><p>The ReplicaSet counts pods matching its selector. The relabeled pod no longer matched, so it counted one too few and created another.</p></details>
+    <details><summary>Does a namespace stop pods from talking to pods in other namespaces?</summary><p>No. You'd need NetworkPolicies for that.</p></details>
+  </section>
+</article>
+
+<!-- =====================================================================
+     7. NETWORKING
+     ===================================================================== -->
+<article id="networking" data-title="7. Networking & Services" data-group="learn">
+  <h1>7. Networking &amp; Services</h1>
+  <p class="lede">How traffic finds pods that keep changing their IPs, and how you reach them from Windows.</p>
+
+  <h2>Rule 1: every pod gets its own IP</h2>
+  <p>The CNI plugin (<strong>kindnet</strong> in your cluster) gives each pod an IP from the <strong>pod CIDR</strong> (<code>10.244.0.0/16</code>). Any pod can reach any other pod by IP directly, with no port mapping. But pod IPs change every time a pod is recreated, so you can't rely on them.</p>
+
+  <h2>Rule 2: Services give a stable address</h2>
+  <p>A <strong>Service</strong> is a stable virtual IP + DNS name in front of a set of pods, chosen by a label selector. It load-balances across whichever matching pods are healthy right now.</p>
+<pre class="diagram">                    Service "web"  (ClusterIP 10.96.x.x, port 80)
+ client pod ──▶     selector: app=web
+                       │  kube-proxy rules spread traffic
+           ┌───────────┼───────────┐
+           ▼           ▼           ▼
+     Pod 10.244.0.20  Pod .21    Pod .22      (targetPort 80)</pre>
+  <p>Service IPs come from the <strong>service CIDR</strong> (<code>10.96.0.0/12</code>). That's why all your Services are <code>10.96.something</code>.</p>
+
+  <h3>The ports, untangled</h3>
+  <table>
+    <tr><th>Field</th><th>Where</th><th>Meaning</th></tr>
+    <tr><td><code>containerPort</code></td><td>Pod spec</td><td>The port the app listens on (mostly documentation)</td></tr>
+    <tr><td><code>targetPort</code></td><td>Service</td><td>Which port on the pod to send traffic to</td></tr>
+    <tr><td><code>port</code></td><td>Service</td><td>The port the Service itself listens on</td></tr>
+    <tr><td><code>nodePort</code></td><td>Service (NodePort type)</td><td>A port 30000–32767 opened on every node</td></tr>
+  </table>
+
+  <h3>Service types</h3>
+  <table>
+    <tr><th>Type</th><th>Reachable from</th><th>Notes</th></tr>
+    <tr><td><code>ClusterIP</code> (default)</td><td>Inside the cluster only</td><td>All your Argo CD services are this type</td></tr>
+    <tr><td><code>NodePort</code></td><td>Node IP + port 30000–32767</td><td>In kind, the "node" is a container, so you also need <code>extraPortMappings</code> when creating the cluster</td></tr>
+    <tr><td><code>LoadBalancer</code></td><td>An external IP from the cloud</td><td>Needs a cloud, or a tool like MetalLB / cloud-provider-kind locally</td></tr>
+    <tr><td>Headless (<code>clusterIP: None</code>)</td><td>DNS returns pod IPs directly</td><td>Used by StatefulSets</td></tr>
+  </table>
+
+  <h2>Rule 3: DNS names</h2>
+  <p><strong>CoreDNS</strong> gives every Service a name: <code>&lt;service&gt;.&lt;namespace&gt;.svc.cluster.local</code>. From a pod in the same namespace, just <code>web</code> works. From another namespace, use <code>web.playground</code>. Argo CD's server finds Redis at <code>argocd-redis:6379</code> this way.</p>
+
+  <h2>Getting in from your PC</h2>
+  <p>This is the confusing part on Windows, because there are so many layers:</p>
+<pre class="diagram">Browser on Windows
+   │  localhost:8091
+   ▼
+kubectl port-forward ── tunnel through the API server ──┐
+                                                        ▼
+Docker Desktop VM ─▶ kind-control-plane container ─▶ Service ─▶ Pod</pre>
+  <table>
+    <tr><th>Option</th><th>Effort</th><th>When</th></tr>
+    <tr><td><strong><code>kubectl port-forward</code></strong></td><td>None</td><td>Dev/debugging. Lasts only while the command runs. <em>This is what you use today.</em></td></tr>
+    <tr><td><strong>NodePort + kind <code>extraPortMappings</code></strong></td><td>Recreate cluster with a config file</td><td>Permanent ports without a running command</td></tr>
+    <tr><td><strong>Ingress / Gateway API</strong></td><td>Install a controller (e.g. ingress-nginx)</td><td>Many apps behind one port, routed by hostname/path, e.g. <code>argocd.localhost</code></td></tr>
+  </table>
+
+  <div class="callout repo"><span class="label">Ports already used on your PC</span>
+    <table>
+      <tr><th>Host port</th><th>Used by</th></tr>
+      <tr><td><code>2222</code>, <code>8080</code>, <code>8000</code></td><td><code>kali-vm</code> (SSH, HTTP, HTTPS)</td></tr>
+      <tr><td><code>53551</code></td><td>kind API server</td></tr>
+      <tr><td><code>8090</code></td><td>This knowledge base (local mode)</td></tr>
+      <tr><td><code>8091</code></td><td>This knowledge base (cluster mode, via port-forward)</td></tr>
+      <tr><td><code>9443</code></td><td>Suggested for the Argo CD UI port-forward (8080 is taken by Kali)</td></tr>
+    </table>
+    <p>Note: <code>nginx</code> in <code>default</code> has <strong>no Service</strong> at all, so nothing can reach it by a stable name yet.</p>
+  </div>
+
+  <section class="lab">
+    <h2>Lab: Services, DNS and port-forward</h2>
+    <p>Uses the <code>web</code> Deployment from Lesson 5.</p>
+    <ol>
+      <li>Create a Service for it, and see which pod IPs it found:
+<pre><code>kubectl expose deployment web -n playground --port=80 --target-port=80
+kubectl get svc web -n playground
+kubectl get endpointslices -n playground</code></pre>
+        The endpoint IPs are your pod IPs (compare with <code>kubectl get pods -n playground -o wide</code>).</li>
+      <li>Call it from inside the cluster with a throwaway pod (<code>--rm</code> deletes it when you exit):
+<pre><code>kubectl run tmp --rm -it --image=busybox:1.36 -n playground -- sh
+wget -qO- http://web
+nslookup web.playground.svc.cluster.local
+exit</code></pre></li>
+      <li>Reach it from your browser:
+<pre><code>kubectl port-forward svc/web -n playground 8092:80</code></pre>
+        Open <a href="http://localhost:8092" target="_blank" rel="noopener">http://localhost:8092</a>, then Ctrl+C to stop.</li>
+      <li>Watch load balancing follow the pods. Scale to 1 and check endpoints again:
+<pre><code>kubectl scale deployment web -n playground --replicas=1
+kubectl get endpointslices -n playground</code></pre></li>
+    </ol>
+  </section>
+
+  <section class="quiz">
+    <h2>Check yourself</h2>
+    <details><summary>Why not just connect to a pod's IP?</summary><p>Pod IPs change whenever a pod is replaced. A Service's IP and DNS name stay the same.</p></details>
+    <details><summary>How does a Service know which pods to send traffic to?</summary><p>Its label selector. It continuously tracks pods matching those labels (visible as EndpointSlices).</p></details>
+    <details><summary>What DNS name would a pod in <code>argocd</code> use to reach <code>web</code> in <code>playground</code>?</summary><p><code>web.playground</code> (or fully: <code>web.playground.svc.cluster.local</code>).</p></details>
+    <details><summary>Why can't you port-forward Argo CD to 8080?</summary><p><code>kali-vm</code> already uses host port 8080. Pick another, like 9443.</p></details>
+  </section>
+</article>
+
+<!-- =====================================================================
+     8. CONFIG
+     ===================================================================== -->
+<article id="config" data-title="8. ConfigMaps & Secrets" data-group="learn">
+  <h1>8. ConfigMaps &amp; Secrets</h1>
+  <p class="lede">Keep configuration out of the image, so one image works everywhere.</p>
+
+  <h2>ConfigMaps</h2>
+  <p>A <strong>ConfigMap</strong> stores non-secret key/value data or whole files. Pods consume it two ways:</p>
+  <ul>
+    <li>as <strong>environment variables</strong> (<code>env</code> / <code>envFrom</code>), or</li>
+    <li>as <strong>files</strong> in a mounted volume, where each key becomes a file.</li>
+  </ul>
+  <div class="callout repo"><span class="label">This very website</span>
+    <p>In cluster mode, these HTML/CSS/JS files live in a ConfigMap called <code>kb-site-…</code>, mounted into nginx at <code>/usr/share/nginx/html</code>. The nginx image is stock, and the content comes from config. See <a href="#/kb-itself">How This Site Runs</a>.</p>
+  </div>
+
+  <h2>Secrets</h2>
+  <p>A <strong>Secret</strong> is structured like a ConfigMap but meant for sensitive data: passwords, tokens, keys. Kubernetes treats it a bit more carefully (it's not printed in <code>describe</code>, can be restricted with RBAC, and can be encrypted at rest if configured).</p>
+  <div class="callout warn"><span class="label">base64 is NOT encryption</span>
+    <p>Secret values are only base64-<em>encoded</em>. Anyone who can read the Secret can decode it in one command. That's exactly how your forgotten Argo CD password was recovered:</p>
+<pre><code>kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d</code></pre>
+    <p>So: <strong>never commit a Secret YAML to git</strong>. Lesson 12 covers how to do it safely.</p>
+  </div>
+
+  <h3>Secret types you'll meet</h3>
+  <table>
+    <tr><th>Type</th><th>For</th><th>Your repo</th></tr>
+    <tr><td><code>Opaque</code></td><td>Anything (default)</td><td><code>argocd-secret</code>, <code>argocd-initial-admin-secret</code></td></tr>
+    <tr><td><code>kubernetes.io/dockerconfigjson</code></td><td>Logging in to a private registry to pull images</td><td><code>app-roots/create-secret.sh</code> (Docker Hub, placeholder)</td></tr>
+    <tr><td><code>kubernetes.io/tls</code></td><td>TLS certificate + key</td><td>Argo CD can use one for its UI</td></tr>
+  </table>
+
+  <section class="lab">
+    <h2>Lab: config without rebuilding</h2>
+    <ol>
+      <li>Create a ConfigMap and a Secret:
+<pre><code>kubectl create configmap app-settings -n playground --from-literal=GREETING=hello --from-literal=COLOR=blue
+kubectl create secret generic app-secret -n playground --from-literal=API_KEY=super-secret-123</code></pre></li>
+      <li>Prove the Secret is only encoded:
+<pre><code>kubectl get secret app-secret -n playground -o yaml
+kubectl get secret app-secret -n playground -o jsonpath="{.data.API_KEY}" | base64 -d</code></pre>
+        (No <code>base64</code> in PowerShell? Use Git Bash, or <code>[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("…"))</code>.)</li>
+      <li>Run a pod that reads both as environment variables:
+<pre><code>@'
+apiVersion: v1
+kind: Pod
+metadata:
+  name: env-demo
+  namespace: playground
+spec:
+  restartPolicy: Never
+  containers:
+    - name: demo
+      image: busybox:1.36
+      command: ["sh", "-c", "echo GREETING=$GREETING COLOR=$COLOR API_KEY=$API_KEY"]
+      envFrom:
+        - configMapRef:
+            name: app-settings
+        - secretRef:
+            name: app-secret
+'@ | kubectl apply -f -</code></pre>
+<pre><code>kubectl logs env-demo -n playground</code></pre></li>
+    </ol>
+  </section>
+
+  <section class="quiz">
+    <h2>Check yourself</h2>
+    <details><summary>Is a Kubernetes Secret encrypted?</summary><p>Not by default. It's base64-encoded, which anyone can reverse. Protection comes from RBAC, optional encryption-at-rest, and keeping it out of git.</p></details>
+    <details><summary>You change a ConfigMap used as env vars. Do running pods see the new value?</summary><p>No. Env vars are read when the container starts, so you must restart the pods (<code>kubectl rollout restart deployment/…</code>). Mounted files <em>do</em> update, after a short delay.</p></details>
+  </section>
+</article>
+
+<!-- =====================================================================
+     9. STORAGE
+     ===================================================================== -->
+<article id="storage" data-title="9. Storage" data-group="learn">
+  <h1>9. Storage</h1>
+  <p class="lede">Containers forget everything when they restart. Volumes are how data survives.</p>
+
+  <h2>Volume types, from shortest-lived to longest</h2>
+  <table>
+    <tr><th>Volume</th><th>Lives as long as</th><th>Use for</th></tr>
+    <tr><td>Container filesystem</td><td>The container</td><td>Nothing you care about</td></tr>
+    <tr><td><code>emptyDir</code></td><td>The pod</td><td>Scratch space shared between containers in a pod</td></tr>
+    <tr><td><code>configMap</code> / <code>secret</code></td><td>The ConfigMap/Secret</td><td>Config files (like this site)</td></tr>
+    <tr><td><strong>PersistentVolumeClaim</strong></td><td>Until you delete the claim</td><td>Databases, uploads, anything real</td></tr>
+  </table>
+
+  <h2>PV, PVC, StorageClass</h2>
+<pre class="diagram">Pod ──uses──▶ PersistentVolumeClaim  "I need 1Gi, read-write"   (you write this)
+                     │ bound to
+                     ▼
+              PersistentVolume       an actual piece of disk     (created for you…)
+                     ▲
+                     │ provisioned by
+              StorageClass "standard" → rancher.io/local-path    (…by this)</pre>
+  <p>You only write the <strong>PVC</strong>. The <strong>StorageClass</strong> automatically creates a matching <strong>PV</strong> ("dynamic provisioning").</p>
+
+  <div class="callout repo"><span class="label">In your cluster</span>
+    <ul>
+      <li>StorageClass <code>standard</code> (default) uses <code>local-path-provisioner</code>, which creates a folder on the node's disk.</li>
+      <li><code>VOLUMEBINDINGMODE: WaitForFirstConsumer</code>: a PVC stays <code>Pending</code> until a pod actually uses it. That's normal, not an error.</li>
+      <li><code>RECLAIMPOLICY: Delete</code>: delete the PVC and the data is deleted too.</li>
+      <li>The "node's disk" is <em>inside the <code>kind-control-plane</code> container</em>. <strong>Deleting the kind cluster deletes all PVC data.</strong></li>
+      <li>No PVCs exist yet. Argo CD keeps its state in Kubernetes objects and git, not on disk.</li>
+    </ul>
+  </div>
+
+  <section class="lab">
+    <h2>Lab: data that survives a pod</h2>
+    <ol>
+      <li>Create a claim, and notice it stays <code>Pending</code>:
+<pre><code>@'
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: notes
+  namespace: playground
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 100Mi
+'@ | kubectl apply -f -
+kubectl get pvc -n playground</code></pre></li>
+      <li>A pod that writes to it:
+<pre><code>@'
+apiVersion: v1
+kind: Pod
+metadata:
+  name: writer
+  namespace: playground
+spec:
+  containers:
+    - name: sh
+      image: busybox:1.36
+      command: ["sh", "-c", "date &gt;&gt; /data/log.txt; cat /data/log.txt; sleep 3600"]
+      volumeMounts:
+        - name: notes
+          mountPath: /data
+  volumes:
+    - name: notes
+      persistentVolumeClaim:
+        claimName: notes
+'@ | kubectl apply -f -
+kubectl get pvc,pv -n playground</code></pre>
+        Now the PVC is <code>Bound</code> and a PV exists.</li>
+      <li>Delete the pod, recreate it (re-run the step 2 block), and check the log:
+<pre><code>kubectl delete pod writer -n playground
+kubectl logs writer -n playground</code></pre>
+        Two timestamps: the data outlived the first pod.</li>
+    </ol>
+  </section>
+
+  <section class="quiz">
+    <h2>Check yourself</h2>
+    <details><summary>Which of PV, PVC, StorageClass do you normally write?</summary><p>Just the PVC. The StorageClass provisions the PV.</p></details>
+    <details><summary>Your PVC is <code>Pending</code>. Broken?</summary><p>Probably not. With <code>WaitForFirstConsumer</code>, it binds once a pod uses it.</p></details>
+    <details><summary>What happens to PVC data if you run <code>kind delete cluster</code>?</summary><p>It's gone. It lives inside the node container.</p></details>
+  </section>
+</article>
+
+<!-- =====================================================================
+     10. HELM
+     ===================================================================== -->
+<article id="helm" data-title="10. Helm" data-group="learn">
+  <h1>10. Helm</h1>
+  <p class="lede">A package manager for Kubernetes: install a whole app (dozens of YAML files) with one command.</p>
+
+  <h2>Why Helm exists</h2>
+  <p>Argo CD alone is ~60 Kubernetes objects. Writing those by hand, then tweaking them per environment, is painful. Helm packages them as a <strong>chart</strong>: YAML <em>templates</em> with blanks, plus a <code>values.yaml</code> that fills the blanks.</p>
+<pre class="diagram">templates/deployment.yaml          values.yaml            rendered YAML
+  replicas: {{ .Values.replicas }}  +  replicas: 2    ──▶   replicas: 2
+  image: {{ .Values.image }}           image: nginx:1.29    image: nginx:1.29</pre>
+
+  <h2>The vocabulary</h2>
+  <table>
+    <tr><th>Term</th><th>Meaning</th><th>Yours</th></tr>
+    <tr><td><strong>Chart</strong></td><td>The package (templates + default values + <code>Chart.yaml</code>)</td><td><code>app-roots/argocd/argocd-chart</code></td></tr>
+    <tr><td><strong>Values</strong></td><td>Settings that fill the templates; you override defaults with your own file</td><td>Chart defaults only so far</td></tr>
+    <tr><td><strong>Release</strong></td><td>One installed copy of a chart, with a name</td><td><code>argocd</code> in namespace <code>argocd</code></td></tr>
+    <tr><td><strong>Revision</strong></td><td>Each install/upgrade bumps it; you can roll back</td><td>Revision 1</td></tr>
+    <tr><td><strong>Repository</strong></td><td>Where charts are downloaded from</td><td><code>oci://dhi.io</code>, argo-helm</td></tr>
+    <tr><td><strong>Dependency / subchart</strong></td><td>A chart inside a chart</td><td><code>redis-chart</code> (as <code>redis-ha</code>), <code>haproxy-chart</code>, both off unless enabled</td></tr>
+  </table>
+
+  <h2>Core commands</h2>
+<pre><code>helm list -A                                  # every release in the cluster
+helm install &lt;release&gt; &lt;chart&gt; -n &lt;ns&gt; -f my-values.yaml
+helm upgrade &lt;release&gt; &lt;chart&gt; -n &lt;ns&gt; -f my-values.yaml
+helm rollback &lt;release&gt; &lt;revision&gt; -n &lt;ns&gt;
+helm uninstall &lt;release&gt; -n &lt;ns&gt;
+helm template &lt;release&gt; &lt;chart&gt;              # render YAML WITHOUT installing (great for learning)
+helm show values &lt;chart&gt;                      # every setting you can change
+helm get values &lt;release&gt; -n &lt;ns&gt;             # what YOU overrode</code></pre>
+
+  <div class="callout repo"><span class="label">Mystery solved: which chart is deployed?</span>
+    <p>Your repo contains the <strong>Docker Hardened Images</strong> chart (<code>argocd-chart</code> 10.9.1, appVersion 3.5.2, images from <code>dhi.io</code>). But the running release says <code>helm.sh/chart: argo-cd-10.9.2</code>, app <code>v3.5.3</code>, images from <code>quay.io</code>. So the install came from the <strong>upstream</strong> argo-helm chart, not from the folder. That's why <code>docs/information.md</code> saw a version mismatch.</p>
+    <p>To manage it from the repo going forward, pick one source, save your settings in a real values file (e.g. <code>app-roots/argocd/values-homelab.yaml</code>), and always <code>helm upgrade</code> with it. Or, better, let Argo CD manage itself (next lesson).</p>
+  </div>
+  <div class="callout warn"><span class="label">Naming trap</span><p><code>app-roots/values.yaml</code> is <strong>not</strong> Helm values. It's a plain nginx Deployment manifest. Helm values files contain settings, never <code>apiVersion</code>/<code>kind</code>.</p></div>
+
+  <section class="lab">
+    <h2>Lab: look under Helm's hood</h2>
+    <ol>
+      <li>Your releases and what was overridden:
+<pre><code>helm list -A
+helm get values argocd -n argocd
+helm history argocd -n argocd</code></pre></li>
+      <li>Render the vendored chart <em>without installing</em> and look at the output:
+<pre><code>helm template test app-roots\argocd\argocd-chart -n argocd | Select-Object -First 80</code></pre></li>
+      <li>Find the setting for the number of argocd-server replicas:
+<pre><code>helm show values app-roots\argocd\argocd-chart | Select-String -Pattern "replicas" | Select-Object -First 10</code></pre></li>
+      <li>See exactly which manifests Helm deployed for the live release:
+<pre><code>helm get manifest argocd -n argocd | Select-String "^kind:" | Group-Object | Sort-Object Count -Descending</code></pre></li>
+    </ol>
+  </section>
+
+  <section class="quiz">
+    <h2>Check yourself</h2>
+    <details><summary>Chart vs release?</summary><p>A chart is the package; a release is one installed instance of it with a name (you could install the same chart twice as two releases).</p></details>
+    <details><summary>How do you preview what Helm would create, without touching the cluster?</summary><p><code>helm template</code>.</p></details>
+    <details><summary>How can you tell which chart version a running app came from?</summary><p><code>helm list</code>, or the <code>helm.sh/chart</code> label on its objects.</p></details>
+  </section>
+</article>
+
+<!-- =====================================================================
+     11. GITOPS & ARGO CD
+     ===================================================================== -->
+<article id="gitops" data-title="11. GitOps & Argo CD" data-group="learn">
+  <h1>11. GitOps &amp; Argo CD</h1>
+  <p class="lede">Stop running <code>kubectl apply</code>. Commit to git, and let the cluster pull.</p>
+
+  <h2>GitOps in one picture</h2>
+<pre class="diagram">  You ──git push──▶ GitHub: CayCall/Kube-Homelabs  (the SOURCE OF TRUTH)
+                         │
+                         │  Argo CD polls every ~3 min (or webhook)
+                         ▼
+                 ┌──── Argo CD ────┐
+                 │ desired (git)   │──compare──▶ live (cluster)
+                 │                 │
+                 │ OutOfSync? ─────┼──▶ apply the difference
+                 └─────────────────┘</pre>
+  <p>It's Lesson 2's reconciliation loop again, one level up: Kubernetes makes the cluster match <em>etcd</em>, and Argo CD makes etcd match <em>git</em>.</p>
+  <div class="cards">
+    <div class="card"><strong>Audit trail</strong><p>Every change is a commit: who, what, when, why.</p></div>
+    <div class="card"><strong>Easy rollback</strong><p><code>git revert</code>, and the cluster follows.</p></div>
+    <div class="card"><strong>Drift detection</strong><p>Someone ran <code>kubectl edit</code>? Argo CD shows it as OutOfSync, and can undo it.</p></div>
+    <div class="card"><strong>Rebuild anything</strong><p>New cluster + Argo CD + your repo = everything back.</p></div>
+  </div>
+
+  <h2>Argo CD's parts (all running in your <code>argocd</code> namespace)</h2>
+  <table>
+    <tr><th>Component</th><th>Job</th></tr>
+    <tr><td><code>argocd-server</code></td><td>The web UI and API you log in to</td></tr>
+    <tr><td><code>argocd-repo-server</code></td><td>Clones git and renders manifests (plain YAML, Helm, Kustomize)</td></tr>
+    <tr><td><code>argocd-application-controller</code></td><td>The loop: compares rendered vs live, syncs</td></tr>
+    <tr><td><code>argocd-applicationset-controller</code></td><td>Generates many Applications from one template</td></tr>
+    <tr><td><code>argocd-redis</code></td><td>Cache</td></tr>
+    <tr><td><code>argocd-dex-server</code></td><td>SSO (e.g. "log in with GitHub")</td></tr>
+    <tr><td><code>argocd-notifications-controller</code></td><td>Slack/email alerts on sync events</td></tr>
+  </table>
+
+  <h2>The Application: Argo CD's unit of work</h2>
+  <p>Argo CD adds new object types to Kubernetes using <strong>CRDs</strong> (Custom Resource Definitions). The main one is <code>Application</code>: <em>"take this path in this git repo, and keep it deployed to this namespace."</em></p>
+<pre><code>apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: knowledge-base
+  namespace: argocd                # Applications always live in Argo CD's namespace
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/CayCall/Kube-Homelabs.git
+    targetRevision: main           # branch, tag, or commit
+    path: knowledge-base           # folder in the repo (Kustomize detected automatically)
+  destination:
+    server: https://kubernetes.default.svc   # "this same cluster"
+    namespace: knowledge-base
+  syncPolicy:
+    automated:
+      prune: true                  # delete things removed from git
+      selfHeal: true               # undo manual changes
+    syncOptions:
+      - CreateNamespace=true</code></pre>
+  <table>
+    <tr><th>Status</th><th>Meaning</th></tr>
+    <tr><td><strong>Synced</strong> / <strong>OutOfSync</strong></td><td>Does the cluster match git?</td></tr>
+    <tr><td><strong>Healthy</strong> / Progressing / Degraded</td><td>Is the app actually working?</td></tr>
+  </table>
+
+  <div class="callout repo"><span class="label">Your status</span>
+    <p>Argo CD is installed and healthy, but has <strong>zero Applications</strong>. It isn't managing anything yet. The lab below gives it its first one: <em>this knowledge base</em>. The ready-made file is <code>knowledge-base/argocd/application.yaml</code>.</p>
+    <p>The folder name <code>app-roots</code> hints at the <strong>app-of-apps</strong> pattern: one "root" Application that points at a folder full of other Application files. Add a new app = add a file. That's a great next step after this lab.</p>
+  </div>
+
+  <section class="lab">
+    <h2>Lab: your first GitOps deployment</h2>
+    <ol>
+      <li><strong>Open the UI</strong> (keep this window open):
+<pre><code>kubectl -n argocd port-forward svc/argocd-server 9443:443</code></pre>
+        Go to <a href="https://localhost:9443" target="_blank" rel="noopener">https://localhost:9443</a> and accept the self-signed certificate warning.</li>
+      <li><strong>Get the password</strong> in another window. Username is <code>admin</code>:
+<pre><code>kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d</code></pre>
+        After logging in, change it under <em>User Info → Update Password</em>, and store it in a password manager.</li>
+      <li><strong>Get the knowledge-base folder onto <code>main</code> on GitHub.</strong> Argo CD reads from GitHub, not your disk. Follow <code>docs/git-workflow.md</code>: push the <code>feature/knowledge-base</code> branch, open a PR, merge it.
+        <div class="callout warn"><span class="label">Private repo?</span><p>If <code>CayCall/Kube-Homelabs</code> is private, Argo CD needs credentials first: <em>Settings → Repositories → Connect Repo</em>, using HTTPS + a GitHub personal access token (read-only).</p></div></li>
+      <li><strong>Create the Application:</strong>
+<pre><code>kubectl apply -f knowledge-base\argocd\application.yaml</code></pre></li>
+      <li>In the UI, click the <code>knowledge-base</code> tile. You'll see the tree: Namespace → Deployment → ReplicaSet → Pod, plus Service and ConfigMap. Wait for <strong>Synced</strong> + <strong>Healthy</strong>.</li>
+      <li><strong>Watch self-heal:</strong> make a manual change and see Argo CD undo it:
+<pre><code>kubectl scale deployment kb -n knowledge-base --replicas=3
+kubectl get pods -n knowledge-base -w</code></pre>
+        Within moments it goes back to 1 replica, because git says 1.</li>
+      <li><strong>The GitOps way to change something:</strong> edit <code>replicas</code> in <code>knowledge-base/k8s/deployment.yaml</code>, commit, merge to main, and watch Argo CD apply it (click <em>Refresh</em> to skip the 3-minute wait).</li>
+    </ol>
+  </section>
+
+  <section class="quiz">
+    <h2>Check yourself</h2>
+    <details><summary>In GitOps, does your laptop push changes to the cluster?</summary><p>No. You push to git; Argo CD (inside the cluster) <em>pulls</em> from git and applies.</p></details>
+    <details><summary>What do <code>prune</code> and <code>selfHeal</code> do?</summary><p><code>prune</code> deletes cluster objects that were removed from git. <code>selfHeal</code> reverts manual changes made directly in the cluster.</p></details>
+    <details><summary>An app is Synced but Degraded. What does that mean?</summary><p>The cluster matches git exactly, but what's in git doesn't work (e.g. a bad image tag). Fix it in git.</p></details>
+  </section>
+</article>
+
+<!-- =====================================================================
+     12. SECRETS MANAGEMENT
+     ===================================================================== -->
+<article id="secrets-mgmt" data-title="12. Managing Secrets" data-group="learn">
+  <h1>12. Managing Secrets Properly</h1>
+  <p class="lede">GitOps says "everything in git". Security says "no passwords in git". Here's how to satisfy both.</p>
+
+  <h2>First: two different kinds of secret</h2>
+  <table>
+    <tr><th></th><th>Human logins</th><th>Machine secrets</th></tr>
+    <tr><td>Examples</td><td>Argo CD admin, Kali root, GitHub, Azure portal</td><td>Repo tokens, registry pull secrets, database passwords</td></tr>
+    <tr><td>Who reads it</td><td>You</td><td>Pods</td></tr>
+    <tr><td>Store in</td><td><strong>A password manager</strong> (Bitwarden, 1Password)</td><td>A secrets system (below)</td></tr>
+  </table>
+
+  <h2>Option A: Sealed Secrets (simple, all local)</h2>
+<pre class="diagram">your PC:   Secret YAML ──kubeseal (public key)──▶ SealedSecret YAML ──▶ git ✓ safe
+cluster:   SealedSecret ──controller (private key)──▶ normal Secret ──▶ pod</pre>
+  <p>Only your cluster's controller can decrypt. <strong>Catch:</strong> back up the controller's private key. If you delete the kind cluster without it, your sealed files can't be decrypted anymore.</p>
+
+  <h2>Option B: External Secrets Operator + Azure Key Vault (industry pattern)</h2>
+<pre class="diagram">Azure Key Vault (secret lives HERE, never in git)
+        ▲
+        │ ESO authenticates (service principal) and fetches
+        │
+cluster: ExternalSecret YAML in git ("get 'argocd-repo-pat' from the vault")
+        └──▶ ESO creates a normal Secret ──▶ pod</pre>
+  <p>Git only holds a <em>pointer</em>. Survives cluster deletion, costs cents per month, and the exact same setup works with AWS Secrets Manager or HashiCorp Vault. <strong>Catch:</strong> the service principal's credentials are the one secret you still have to put in by hand (the "secret zero" problem).</p>
+
+  <table>
+    <tr><th></th><th>Sealed Secrets</th><th>ESO + Azure Key Vault</th></tr>
+    <tr><td>Cost</td><td>Free</td><td>~cents/month</td></tr>
+    <tr><td>Setup</td><td>Low</td><td>Medium</td></tr>
+    <tr><td>Survives cluster rebuild</td><td>Only if you backed up the key</td><td>Yes</td></tr>
+    <tr><td>Career value</td><td>Good</td><td>High (standard on AKS/EKS)</td></tr>
+  </table>
+
+  <div class="callout repo"><span class="label">Things to fix in your repo</span>
+    <ul>
+      <li><strong>Kali root password is in the Dockerfile</strong>, and therefore in git history forever. If the GitHub repo is public, treat it as public. Best fix: SSH key login with <code>PasswordAuthentication no</code>. Then there's no password at all.</li>
+      <li><strong><code>argocd-initial-admin-secret</code></strong> still exists. After changing the admin password, Argo CD's docs say to delete it: <code>kubectl -n argocd delete secret argocd-initial-admin-secret</code>.</li>
+      <li><strong><code>create-secret.sh</code></strong> takes a password on the command line, so it ends up in your shell history. Prefer <code>--from-file</code>, or one of the options above.</li>
+    </ul>
+  </div>
+
+  <section class="lab">
+    <h2>Lab: find secrets that shouldn't be in git</h2>
+    <ol>
+      <li>Search the repo for likely secrets (run in Git Bash or PowerShell with git):
+<pre><code>git grep -n -i -E "password|passwd|secret|token|chpasswd"</code></pre></li>
+      <li>Check whether a secret was ever committed, even if it's been deleted since:
+<pre><code>git log -p -S "chpasswd" --oneline</code></pre>
+        This is why "I deleted it later" doesn't help: git history keeps everything.</li>
+      <li>List the Secrets in your cluster (names only, not values):
+<pre><code>kubectl get secrets -A</code></pre></li>
+    </ol>
+  </section>
+
+  <section class="quiz">
+    <h2>Check yourself</h2>
+    <details><summary>Where should your Argo CD admin password live?</summary><p>In a password manager. It's a human login, not something pods read.</p></details>
+    <details><summary>Is it safe to commit a SealedSecret to a public repo?</summary><p>Yes, that's the point. Only the cluster's private key can decrypt it.</p></details>
+    <details><summary>You remove a password from a file and commit. Is it gone?</summary><p>No, it's still in git history. Rotate (change) the password.</p></details>
+  </section>
+</article>
+
+<!-- =====================================================================
+     13. TROUBLESHOOTING
+     ===================================================================== -->
+<article id="troubleshooting" data-title="13. Troubleshooting" data-group="learn">
+  <h1>13. Troubleshooting</h1>
+  <p class="lede">A repeatable method beats guessing. Same four steps, every time.</p>
+
+  <h2>The method</h2>
+<pre class="diagram">1. GET       kubectl get pods -n &lt;ns&gt;             what's the STATUS / RESTARTS?
+2. DESCRIBE  kubectl describe pod &lt;pod&gt; -n &lt;ns&gt;   read EVENTS at the bottom
+3. LOGS      kubectl logs &lt;pod&gt; -n &lt;ns&gt;           add --previous if it crashed
+4. EXEC      kubectl exec -it &lt;pod&gt; -n &lt;ns&gt; -- sh  look around from inside</pre>
+  <p>Plus, for the whole namespace: <code>kubectl get events -n &lt;ns&gt; --sort-by=.lastTimestamp</code>.</p>
+
+  <h2>Status decoder</h2>
+  <table>
+    <tr><th>You see</th><th>It usually means</th><th>Check</th></tr>
+    <tr><td><code>Pending</code></td><td>Can't be scheduled (not enough CPU/memory) or PVC not bound</td><td>describe → Events</td></tr>
+    <tr><td><code>ErrImagePull</code> / <code>ImagePullBackOff</code></td><td>Typo in image name/tag, or private image without a pull secret</td><td>describe → the exact image + error</td></tr>
+    <tr><td><code>CrashLoopBackOff</code></td><td>The app starts, then exits, over and over</td><td><code>logs --previous</code></td></tr>
+    <tr><td><code>CreateContainerConfigError</code></td><td>Refers to a ConfigMap/Secret that doesn't exist</td><td>describe</td></tr>
+    <tr><td><code>OOMKilled</code></td><td>Used more memory than its limit</td><td>describe → Last State</td></tr>
+    <tr><td><code>Running</code> but 0/1 READY</td><td>Readiness probe failing</td><td>describe → probe events, logs</td></tr>
+    <tr><td><code>Completed</code></td><td>Exited successfully (normal for Jobs)</td><td>Nothing</td></tr>
+  </table>
+
+  <h2>"kubectl itself doesn't work"</h2>
+  <table>
+    <tr><th>Error</th><th>Cause in your setup</th><th>Fix</th></tr>
+    <tr><td><code>x509: certificate signed by unknown authority</code></td><td>AVG Web Shield</td><td>AVG exception for <code>127.0.0.1</code>/<code>localhost</code></td></tr>
+    <tr><td><code>connection refused</code> / <code>Unable to connect</code></td><td>Docker Desktop or the kind container isn't running</td><td>Start Docker Desktop; <code>docker start kind-control-plane</code></td></tr>
+    <tr><td>Resources "missing"</td><td>Wrong context or namespace</td><td><code>kubectl config current-context</code>; try <code>-A</code></td></tr>
+    <tr><td><code>port is already allocated</code> / bind error on port-forward</td><td>Port in use (Kali has 8080)</td><td>Use another local port</td></tr>
+  </table>
+
+  <section class="lab">
+    <h2>Lab: break things on purpose</h2>
+    <ol>
+      <li><strong>Bad image tag:</strong>
+<pre><code>kubectl run broken-image --image=nginx:does-not-exist -n playground
+kubectl get pods -n playground
+kubectl describe pod broken-image -n playground</code></pre>
+        Find the line in Events that tells you the tag doesn't exist.</li>
+      <li><strong>Crash loop:</strong>
+<pre><code>kubectl run crasher --image=busybox:1.36 -n playground -- sh -c "echo starting; sleep 3; echo oh no; exit 1"
+kubectl get pods -n playground -w</code></pre>
+        Watch <code>Error</code> → <code>CrashLoopBackOff</code> with growing waits. Then read why:
+<pre><code>kubectl logs crasher -n playground --previous</code></pre></li>
+      <li><strong>Missing config:</strong>
+<pre><code>@'
+apiVersion: v1
+kind: Pod
+metadata:
+  name: needs-config
+  namespace: playground
+spec:
+  containers:
+    - name: web
+      image: nginx:1.29
+      envFrom:
+        - configMapRef:
+            name: does-not-exist
+'@ | kubectl apply -f -
+kubectl get pods -n playground</code></pre>
+        Status: <code>CreateContainerConfigError</code>. <code>describe</code> names the missing ConfigMap.</li>
+      <li><strong>Clean up everything from every lab:</strong>
+<pre><code>kubectl delete namespace playground</code></pre>
+        One command, because everything lived in one namespace. Recreate it anytime with <code>kubectl create namespace playground</code>.</li>
+    </ol>
+  </section>
+
+  <section class="quiz">
+    <h2>Check yourself</h2>
+    <details><summary>A pod is in CrashLoopBackOff. Which command shows you why?</summary><p><code>kubectl logs &lt;pod&gt; --previous</code>, the output of the container that crashed (the current one may have just started).</p></details>
+    <details><summary>ImagePullBackOff on a private image whose name is correct. What's missing?</summary><p>An image pull secret (<code>imagePullSecrets</code>), like the one <code>create-secret.sh</code> is meant to create.</p></details>
+  </section>
+
+  <div class="callout tip"><span class="label">You've finished the lessons 🎉</span>
+    <p>Good next projects for this homelab: (1) Argo CD app-of-apps under <code>app-roots</code>; (2) deploy n8n with a PVC; (3) set up Sealed Secrets or ESO + Key Vault; (4) recreate the cluster with a kind config that adds <code>extraPortMappings</code> and an ingress controller.</p>
+  </div>
+</article>
+
+<!-- =====================================================================
+     THIS REPO: MAP
+     ===================================================================== -->
+<article id="repo-map" data-title="Repo Map" data-group="repo">
+  <h1>Repo Map</h1>
+  <p class="lede"><code>C:\Kuberenetes</code> → GitHub <code>CayCall/Kube-Homelabs</code>. What every folder is for.</p>
+<pre class="diagram">C:\Kuberenetes
+├── kind-windows-amd64.exe         the kind CLI (git-ignored, ~10 MB)
+├── nginx.yaml                     nginx Deployment, 2 replicas ← what's applied in "default"
+├── app-roots/
+│   ├── values.yaml                ⚠ NOT Helm values: another nginx Deployment (3 replicas)
+│   ├── create-secret.sh           placeholder: Docker Hub pull secret (docker-registry)
+│   ├── argocd/argocd-chart/       vendored Docker Hardened Images Argo CD chart (10.9.1)
+│   │   ├── Chart.yaml             chart metadata, pinned image digests
+│   │   ├── values.yaml            all default settings (huge)
+│   │   ├── templates/             the YAML templates, one folder per component
+│   │   └── charts/                subcharts: redis-chart, haproxy-chart (off by default)
+│   └── KaliLinux-VirtualMachine/  Dockerfile + docker-compose.yml (plain Docker)
+├── docs/
+│   ├── argo-cd-deploy.md          how Argo CD was installed + accessed, open items
+│   ├── git-workflow.md            feature-branch → main process
+│   ├── information.md             container images used + security notes
+│   ├── kali-vm.md                 Kali container guide (⚠ password out of date)
+│   └── deployments/
+│       └── deployed-inventory.md  live snapshot of everything running
+├── knowledge-base/                ← THIS SITE
+│   ├── site/                      index.html, style.css, app.js
+│   ├── k8s/                       namespace, deployment, service
+│   ├── kustomization.yaml         bundles k8s/ + turns site/ into a ConfigMap
+│   ├── argocd/application.yaml    Argo CD Application for this site
+│   ├── serve.ps1                  local mode (python web server)
+│   └── deploy.ps1                 cluster mode (apply + port-forward)
+├── Command Sheet/                 empty (planned: command notes)
+└── Kube-Homelabs/                 empty</pre>
+
+  <h2>Which file does what, by question</h2>
+  <table>
+    <tr><th>I want to…</th><th>Look at</th></tr>
+    <tr><td>Recreate the cluster</td><td><code>docs/argo-cd-deploy.md</code> → Cluster</td></tr>
+    <tr><td>Reinstall / change Argo CD</td><td><code>docs/argo-cd-deploy.md</code>, <a href="#/helm">Helm lesson</a></td></tr>
+    <tr><td>Know what's running right now</td><td><a href="#/inventory">What's Deployed</a>, <code>docs/deployments/deployed-inventory.md</code></td></tr>
+    <tr><td>Commit a change the right way</td><td><code>docs/git-workflow.md</code></td></tr>
+    <tr><td>Use the Kali box</td><td><code>docs/kali-vm.md</code> (check the Dockerfile for the current password)</td></tr>
+    <tr><td>Edit this knowledge base</td><td><a href="#/kb-itself">How This Site Runs</a></td></tr>
+  </table>
+</article>
+
+<!-- =====================================================================
+     THIS REPO: INVENTORY
+     ===================================================================== -->
+<article id="inventory" data-title="What's Deployed" data-group="repo">
+  <h1>What's Deployed</h1>
+  <p class="lede">Snapshot from 2026-10-25. Full detail in <code>docs/deployments/deployed-inventory.md</code>.</p>
+
+  <h2>Cluster</h2>
+  <table>
+    <tr><td>Tool / name</td><td>kind, cluster <code>kind</code>, node container <code>kind-control-plane</code></td></tr>
+    <tr><td>Context</td><td><code>Nebula</code> → <code>https://127.0.0.1:53551</code></td></tr>
+    <tr><td>Kubernetes</td><td>v1.36.1, 1 node (control-plane + workloads), containerd 2.3.1</td></tr>
+    <tr><td>Networking</td><td>kindnet CNI; pods <code>10.244.0.0/16</code>; services <code>10.96.0.0/12</code>; CoreDNS</td></tr>
+    <tr><td>Storage</td><td><code>standard</code> (default) → local-path-provisioner; no PVCs yet</td></tr>
+  </table>
+
+  <h2>Applications</h2>
+  <table>
+    <tr><th>Namespace</th><th>What</th><th>How it got there</th><th>Reach it</th></tr>
+    <tr><td><code>argocd</code></td><td>Argo CD v3.5.3: 6 Deployments + 1 StatefulSet</td><td>Helm, upstream <code>argo-cd-10.9.2</code></td><td><code>port-forward svc/argocd-server 9443:443</code></td></tr>
+    <tr><td><code>default</code></td><td><code>nginx</code> Deployment, 2× <code>nginx:latest</code></td><td><code>kubectl apply -f nginx.yaml</code></td><td>No Service</td></tr>
+    <tr><td><code>default</code></td><td><code>kali</code> bare pod, <code>kalilinux/kali-rolling</code></td><td>By hand (<code>kubectl run</code>), not in git</td><td><code>kubectl exec -it kali -- bash</code></td></tr>
+    <tr><td><code>knowledge-base</code></td><td>This site: nginx + ConfigMap</td><td><code>kubectl apply -k knowledge-base</code> (later: Argo CD)</td><td><code>port-forward svc/kb 8091:80</code></td></tr>
+  </table>
+
+  <h2>Outside Kubernetes</h2>
+  <table>
+    <tr><td><code>kali-vm</code></td><td>Docker Compose, image <code>kuberenetes-kali</code>, ports 2222→22, 8080→80, 8000→443; <code>ssh root@localhost -p 2222</code></td></tr>
+  </table>
+
+  <h2>Argo CD state</h2>
+  <ul>
+    <li>Applications: <strong>none</strong> yet (until you do the <a href="#/gitops">GitOps lab</a>)</li>
+    <li>Projects: <code>default</code> only</li>
+    <li>Repositories: none connected</li>
+  </ul>
+
+  <h2>Refresh this information yourself</h2>
+<pre><code>kubectl get deploy,sts,ds,svc -A
+kubectl get applications -n argocd
+helm list -A
+docker ps</code></pre>
+</article>
+
+<!-- =====================================================================
+     THIS REPO: KB ITSELF
+     ===================================================================== -->
+<article id="kb-itself" data-title="How This Site Runs" data-group="repo">
+  <h1>How This Site Runs</h1>
+  <p class="lede">This website is itself a small Kubernetes app, so it doubles as a worked example.</p>
+
+  <h2>Two ways to open it</h2>
+  <table>
+    <tr><th></th><th>Local mode</th><th>Cluster mode</th></tr>
+    <tr><td>Command</td><td><code>.\knowledge-base\serve.ps1</code></td><td><code>.\knowledge-base\deploy.ps1</code></td></tr>
+    <tr><td>URL</td><td><a href="http://localhost:8090">http://localhost:8090</a></td><td><a href="http://localhost:8091">http://localhost:8091</a></td></tr>
+    <tr><td>Needs</td><td>Python</td><td>Running cluster + working kubectl</td></tr>
+    <tr><td>Edits show up</td><td>Instantly (refresh)</td><td>After re-running deploy</td></tr>
+  </table>
+
+  <h2>Cluster mode, piece by piece</h2>
+<pre class="diagram">knowledge-base/site/*.html|css|js
+        │  kustomization.yaml → configMapGenerator
+        ▼
+ConfigMap  kb-site-&lt;hash&gt;     ← the hash changes whenever the content changes
+        │  mounted as files at /usr/share/nginx/html
+        ▼
+Deployment kb  (nginx:1.29-alpine, 1 replica, read-only, probes)
+        │  selected by app.kubernetes.io/name=knowledge-base
+        ▼
+Service    kb  (ClusterIP :80)
+        │  kubectl port-forward svc/kb -n knowledge-base 8091:80
+        ▼
+http://localhost:8091</pre>
+
+  <h3>Concepts this uses (and where they're taught)</h3>
+  <ul>
+    <li><strong>Namespace</strong> <code>knowledge-base</code>: <a href="#/namespaces">Lesson 6</a></li>
+    <li><strong>Deployment</strong> with labels, a selector, resource limits and readiness/liveness probes: <a href="#/deployments">Lesson 5</a></li>
+    <li><strong>ConfigMap mounted as a volume</strong>: <a href="#/config">Lesson 8</a></li>
+    <li><strong>ClusterIP Service + port-forward</strong>: <a href="#/networking">Lesson 7</a></li>
+    <li><strong>Kustomize</strong>: built into kubectl (<code>kubectl apply -k</code>). It bundles several YAML files and generates the ConfigMap from the site files.</li>
+    <li><strong>GitOps</strong> via <code>argocd/application.yaml</code>: <a href="#/gitops">Lesson 11</a></li>
+  </ul>
+
+  <div class="callout tip"><span class="label">Why the ConfigMap name has a hash</span>
+    <p>Pods don't restart when a ConfigMap changes. Kustomize names the ConfigMap after a hash of its content (<code>kb-site-7g2k9…</code>) and updates the Deployment to point at the new name. A changed Deployment means a rolling update, so new content rolls out automatically.</p>
+  </div>
+
+  <h2>Editing the site</h2>
+  <ol>
+    <li>Lessons are <code>&lt;article&gt;</code> blocks in <code>site/index.html</code>. The sidebar builds itself from each article's <code>data-title</code> and <code>data-group</code> (<code>learn</code> or <code>repo</code>).</li>
+    <li>Building blocks: <code>&lt;div class="callout tip|warn|repo"&gt;</code>, <code>&lt;section class="lab"&gt;</code>, <code>&lt;section class="quiz"&gt;</code> with <code>&lt;details&gt;</code>, <code>&lt;pre class="diagram"&gt;</code>.</li>
+    <li>Preview with local mode, then re-run <code>deploy.ps1</code> (or merge to main once Argo CD manages it).</li>
+    <li>Keep the three site files under ~250 KB in total: <code>kubectl apply</code> stores a copy of each object in an annotation, which has a size limit.</li>
+  </ol>
+
+  <section class="lab">
+    <h2>Lab: deploy this site yourself</h2>
+    <ol>
+      <li>See what Kustomize generates, without applying anything:
+<pre><code>kubectl kustomize knowledge-base | Select-String "^kind:|^  name:"</code></pre></li>
+      <li>Apply it and watch it come up:
+<pre><code>kubectl apply -k knowledge-base
+kubectl get all,configmap -n knowledge-base</code></pre></li>
+      <li>Open it:
+<pre><code>kubectl port-forward svc/kb -n knowledge-base 8091:80</code></pre>
+        <a href="http://localhost:8091" target="_blank" rel="noopener">http://localhost:8091</a>. Your progress checkmarks won't carry over: each address has its own browser storage.</li>
+      <li>Change a word in <code>site/index.html</code>, apply again, and watch a rolling update triggered purely by content:
+<pre><code>kubectl apply -k knowledge-base
+kubectl get configmap,rs -n knowledge-base</code></pre></li>
+    </ol>
+  </section>
+</article>
+
+<!-- =====================================================================
+     THIS REPO: OPEN ITEMS
+     ===================================================================== -->
+<article id="todo" data-title="Open Items" data-group="repo">
+  <h1>Open Items</h1>
+  <p class="lede">Everything unfinished, collected from all the docs, grouped by area.</p>
+
+  <h2>Access &amp; tooling</h2>
+  <ul>
+    <li>☐ Add an AVG Web Shield exception for <code>127.0.0.1</code>/<code>localhost</code> (fixes the kubectl x509 error)</li>
+    <li>☐ Fix context-name casing in <code>docs/argo-cd-deploy.md</code> (<code>nebula</code> → <code>Nebula</code>) and its <code>8080:443</code> port-forward (8080 is taken by Kali)</li>
+    <li>☐ Persistent Argo CD access: OpenLens port-forward, or NodePort + kind <code>extraPortMappings</code>, or an ingress controller</li>
+    <li>☐ Fill in <code>Command Sheet/</code> (or point it at the <a href="#/cheatsheet">Cheat Sheet</a>)</li>
+  </ul>
+
+  <h2>Argo CD &amp; GitOps</h2>
+  <ul>
+    <li>☐ Decide which chart is the source: vendored DHI chart (10.9.1) vs the deployed upstream chart (10.9.2); save overrides in a real values file</li>
+    <li>☐ First Application (the <a href="#/gitops">GitOps lab</a> covers this with the knowledge base)</li>
+    <li>☐ App-of-apps under <code>app-roots</code> (<code>app-roots/Dev</code> was planned)</li>
+    <li>☐ Connect the repo in Argo CD if it's private</li>
+    <li>☐ n8n under <code>app-roots/n8n</code></li>
+  </ul>
+
+  <h2>Secrets &amp; security</h2>
+  <ul>
+    <li>☐ Store the Argo CD and Kali passwords in a password manager</li>
+    <li>☐ Change the Argo CD admin password, then delete <code>argocd-initial-admin-secret</code></li>
+    <li>☐ Kali: switch to SSH keys and disable password auth; the old password is in git history, so rotate it</li>
+    <li>☐ Choose Sealed Secrets or ESO + Azure Key Vault (<a href="#/secrets-mgmt">Lesson 12</a>)</li>
+    <li>☐ Make <code>create-secret.sh</code> real (or replace it with the chosen secrets approach)</li>
+  </ul>
+
+  <h2>Cleanup</h2>
+  <ul>
+    <li>☐ <code>app-roots/values.yaml</code> is a duplicate nginx Deployment, not Helm values: delete or rename it</li>
+    <li>☐ Pin <code>nginx:latest</code> and <code>kalilinux/kali-rolling</code> to versions</li>
+    <li>☐ The bare <code>default/kali</code> pod: delete it, or turn it into a YAML file in git</li>
+    <li>☐ Update <code>docs/kali-vm.md</code> (out-of-date password)</li>
+    <li>☐ Empty folders: <code>Kube-Homelabs/</code>, <code>Command Sheet/</code></li>
+  </ul>
+</article>
+
+<!-- =====================================================================
+     THIS REPO: CHEAT SHEET
+     ===================================================================== -->
+<article id="cheatsheet" data-title="Cheat Sheet" data-group="repo">
+  <h1>Cheat Sheet</h1>
+  <p class="lede">The commands for this homelab, in one place.</p>
+
+  <h2>Cluster</h2>
+<pre><code>docker start kind-control-plane              # cluster stopped after a reboot?
+.\kind-windows-amd64.exe get clusters
+kubectl config use-context Nebula
+kubectl get nodes
+kubectl get pods -A</code></pre>
+
+  <h2>Looking around</h2>
+<pre><code>kubectl get all -n &lt;ns&gt;
+kubectl get pods -n &lt;ns&gt; -o wide --show-labels
+kubectl describe pod &lt;pod&gt; -n &lt;ns&gt;
+kubectl logs &lt;pod&gt; -n &lt;ns&gt; -f
+kubectl logs &lt;pod&gt; -n &lt;ns&gt; --previous
+kubectl exec -it &lt;pod&gt; -n &lt;ns&gt; -- sh
+kubectl get events -n &lt;ns&gt; --sort-by=.lastTimestamp
+kubectl explain deployment.spec</code></pre>
+
+  <h2>Changing things</h2>
+<pre><code>kubectl apply -f file.yaml
+kubectl apply -k folder
+kubectl delete -f file.yaml
+kubectl scale deployment &lt;name&gt; -n &lt;ns&gt; --replicas=3
+kubectl rollout restart deployment/&lt;name&gt; -n &lt;ns&gt;
+kubectl rollout undo deployment/&lt;name&gt; -n &lt;ns&gt;</code></pre>
+
+  <h2>Argo CD</h2>
+<pre><code>kubectl -n argocd port-forward svc/argocd-server 9443:443
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+kubectl get applications -n argocd
+helm list -n argocd</code></pre>
+
+  <h2>Knowledge base</h2>
+<pre><code>.\knowledge-base\serve.ps1                   # local:   http://localhost:8090
+.\knowledge-base\deploy.ps1                  # cluster: http://localhost:8091</code></pre>
+
+  <h2>Kali (Docker)</h2>
+<pre><code>cd app-roots\KaliLinux-VirtualMachine
+docker compose up -d --build
+ssh root@localhost -p 2222
+docker exec -it kali-vm bash</code></pre>
+
+  <h2>When kubectl is blocked (AVG x509)</h2>
+<pre><code>docker exec kind-control-plane kubectl --kubeconfig /etc/kubernetes/admin.conf get pods -A</code></pre>
+
+  <h2>Git (see docs/git-workflow.md)</h2>
+<pre><code>git checkout main; git pull
+git checkout -b feature/&lt;name&gt;
+git add .; git commit -m "..."
+git push -u origin feature/&lt;name&gt;</code></pre>
+</article>
+
+<!-- =====================================================================
+     THIS REPO: GLOSSARY
+     ===================================================================== -->
+<article id="glossary" data-title="Glossary" data-group="repo">
+  <h1>Glossary</h1>
+  <p class="lede">Every term in this guide, in plain English. Use the search box to jump here.</p>
+  <table>
+    <tr><th>Term</th><th>Meaning</th></tr>
+    <tr><td>Annotation</td><td>Key/value metadata for tools; not used for selecting</td></tr>
+    <tr><td>API server</td><td>The front door of the cluster; everything talks to it</td></tr>
+    <tr><td>Application (Argo CD)</td><td>"Keep this git path deployed to this namespace"</td></tr>
+    <tr><td>App-of-apps</td><td>An Argo CD Application whose folder contains other Applications</td></tr>
+    <tr><td>CA (Certificate Authority)</td><td>Signs certificates; kubectl trusts only your cluster's CA</td></tr>
+    <tr><td>Chart</td><td>A Helm package: templates + default values</td></tr>
+    <tr><td>CNI</td><td>Plugin that gives pods IPs and connects them (kindnet)</td></tr>
+    <tr><td>ConfigMap</td><td>Non-secret config as key/values or files</td></tr>
+    <tr><td>Container</td><td>A running instance of an image; an isolated process</td></tr>
+    <tr><td>containerd</td><td>The runtime that actually runs containers on a node</td></tr>
+    <tr><td>Context</td><td>Named cluster + user + namespace in kubeconfig (<code>Nebula</code>)</td></tr>
+    <tr><td>Control plane</td><td>API server, etcd, scheduler, controller manager</td></tr>
+    <tr><td>Controller</td><td>A loop that makes actual state match desired state</td></tr>
+    <tr><td>CoreDNS</td><td>Cluster DNS: turns <code>web.playground</code> into an IP</td></tr>
+    <tr><td>CRD</td><td>Custom Resource Definition: adds a new object type (e.g. Application)</td></tr>
+    <tr><td>DaemonSet</td><td>One pod per node</td></tr>
+    <tr><td>Deployment</td><td>Manages ReplicaSets for stateless apps: scaling, rollouts</td></tr>
+    <tr><td>Desired state</td><td>What you declared in <code>spec</code></td></tr>
+    <tr><td>Digest</td><td>An image's unchangeable <code>sha256:</code> fingerprint</td></tr>
+    <tr><td>Drift</td><td>Cluster no longer matches git</td></tr>
+    <tr><td>emptyDir</td><td>Temporary volume that lives as long as the pod</td></tr>
+    <tr><td>Endpoint(Slice)</td><td>The list of pod IPs behind a Service</td></tr>
+    <tr><td>etcd</td><td>The cluster's database</td></tr>
+    <tr><td>External Secrets Operator</td><td>Syncs secrets from a vault (e.g. Azure Key Vault) into Kubernetes</td></tr>
+    <tr><td>GitOps</td><td>Git is the source of truth; an agent pulls and applies it</td></tr>
+    <tr><td>Helm</td><td>Kubernetes package manager</td></tr>
+    <tr><td>Image</td><td>Read-only template a container is started from</td></tr>
+    <tr><td>Ingress</td><td>HTTP routing into the cluster by hostname/path (needs a controller)</td></tr>
+    <tr><td>kind</td><td>Kubernetes IN Docker: a cluster whose nodes are containers</td></tr>
+    <tr><td>kubeconfig</td><td><code>~/.kube/config</code>: clusters, users, contexts</td></tr>
+    <tr><td>kubelet</td><td>Agent on each node that runs the pods assigned to it</td></tr>
+    <tr><td>kube-proxy</td><td>Programs network rules so Services work</td></tr>
+    <tr><td>Kustomize</td><td>Built-in tool to bundle/patch YAML (<code>kubectl apply -k</code>)</td></tr>
+    <tr><td>Label / Selector</td><td>Tag on an object / a query that matches tags</td></tr>
+    <tr><td>Namespace</td><td>A folder for objects</td></tr>
+    <tr><td>Node</td><td>A machine (here: a container) that runs pods</td></tr>
+    <tr><td>NodePort</td><td>Service type that opens a port (30000–32767) on every node</td></tr>
+    <tr><td>Pod</td><td>Smallest deployable unit: one or more containers sharing an IP</td></tr>
+    <tr><td>Port-forward</td><td>Temporary tunnel from your PC into the cluster</td></tr>
+    <tr><td>Probe</td><td>Health check: readiness (send traffic?) and liveness (restart?)</td></tr>
+    <tr><td>PV / PVC</td><td>A piece of storage / a request for storage</td></tr>
+    <tr><td>Reconciliation</td><td>Continuously making actual match desired</td></tr>
+    <tr><td>Registry</td><td>Where images are stored (Docker Hub, quay.io…)</td></tr>
+    <tr><td>Release (Helm)</td><td>One installed instance of a chart</td></tr>
+    <tr><td>ReplicaSet</td><td>Keeps N identical pods running</td></tr>
+    <tr><td>RBAC</td><td>Role-based access control: who can do what</td></tr>
+    <tr><td>Sealed Secret</td><td>An encrypted Secret that's safe to commit</td></tr>
+    <tr><td>Secret</td><td>Sensitive config; base64-encoded, not encrypted</td></tr>
+    <tr><td>Service</td><td>Stable IP + DNS name in front of a set of pods</td></tr>
+    <tr><td>StatefulSet</td><td>Pods with stable names and their own storage</td></tr>
+    <tr><td>StorageClass</td><td>Recipe for automatically creating PVs</td></tr>
+    <tr><td>Sync (Argo CD)</td><td>Applying git's state to the cluster</td></tr>
+    <tr><td>Values (Helm)</td><td>Settings that fill a chart's templates</td></tr>
+  </table>
+</article>
+
+  </div></main>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

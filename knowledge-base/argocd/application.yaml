@@ -1,0 +1,23 @@
+# Hands the knowledge base over to Argo CD (GitOps lab, lesson 11).
+# Only works once knowledge-base/ is merged to main on GitHub.
+# Apply with:  kubectl apply -f knowledge-base\argocd\application.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: knowledge-base
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/CayCall/Kube-Homelabs.git
+    targetRevision: main
+    path: knowledge-base
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: knowledge-base
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

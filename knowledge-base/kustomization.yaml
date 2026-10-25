@@ -1,0 +1,17 @@
+# Apply with:  kubectl apply -k knowledge-base
+# Preview:     kubectl kustomize knowledge-base
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: knowledge-base
+resources:
+  - k8s/namespace.yaml
+  - k8s/deployment.yaml
+  - k8s/service.yaml
+# Turns the site files into a ConfigMap named kb-site-<content hash>.
+# When the content changes, the name changes, and the Deployment rolls out automatically.
+configMapGenerator:
+  - name: kb-site
+    files:
+      - site/index.html
+      - site/style.css
+      - site/app.js

@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kb
+  labels:
+    app.kubernetes.io/name: knowledge-base
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: knowledge-base   # must match the pod template labels below
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: knowledge-base
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.29-alpine             # pinned version, not :latest
+          ports:
+            - name: http
+              containerPort: 80
+          volumeMounts:
+            - name: site                       # the HTML/CSS/JS from the ConfigMap
+              mountPath: /usr/share/nginx/html
+              readOnly: true
+            - name: cache                      # nginx needs these writable because
+              mountPath: /var/cache/nginx      # the root filesystem is read-only
+            - name: run
+              mountPath: /var/run
+          readinessProbe:                      # "ready to receive traffic?"
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 10
+          livenessProbe:                       # "still alive, or should I restart it?"
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+      volumes:
+        - name: site
+          configMap:
+            name: kb-site                      # kustomize rewrites this to kb-site-<hash>
+        - name: cache
+          emptyDir: {}
+        - name: run
+          emptyDir: {}
